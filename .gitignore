@@ -1,0 +1,11 @@
+# Сборка .NET
+app/bin/
+app/obj/
+dist/
+
+# Локальные настройки редакторов и агента
+.claude/
+.vs/
+.vscode/
+*.user
+Thumbs.db

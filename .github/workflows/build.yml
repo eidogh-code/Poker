@@ -1,0 +1,44 @@
+name: Сборка для Windows
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write # нужно только шагу «Релиз» при пуше тега v*
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Тесты движка
+        run: node --test
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Сборка Покер.exe
+        shell: pwsh
+        run: ./build.ps1
+
+      - name: Латинское имя файла для скачивания
+        shell: pwsh
+        run: Copy-Item 'dist/Покер.exe' 'dist/Poker-win-x64.exe'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Poker-win-x64
+          path: dist/Poker-win-x64.exe
+          if-no-files-found: error
+
+      - name: Релиз
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Poker-win-x64.exe
+          generate_release_notes: true

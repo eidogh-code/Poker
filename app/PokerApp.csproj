@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>PokerApp</RootNamespace>
+    <AssemblyName>Poker</AssemblyName>
+    <ApplicationIcon>poker.ico</ApplicationIcon>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+
+    <Product>Покер</Product>
+    <AssemblyTitle>Покер</AssemblyTitle>
+    <Description>Покер против ботов: Холдем, Омаха, Холдем с джокерами</Description>
+    <Version>1.0.0</Version>
+
+    <!-- Один exe-файл без установки: .NET и игра упакованы внутрь. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>none</DebugType>
+    <SatelliteResourceLanguages>ru</SatelliteResourceLanguages>
+    <!-- Пакет WebView2 тянет WPF-сборку, которую WinForms-приложение не использует. -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+  </ItemGroup>
+
+  <!-- Игра (HTML/CSS/JS/шрифты) встраивается в exe из общей папки poker/. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\poker\**\*" LogicalName="web/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Покер</title>
+  <link rel="stylesheet" href="css/fonts.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <section id="menu" class="menu">
+    <div class="menu-hero">
+      <div class="hero-fan" aria-hidden="true">
+        <div class="card"><span class="cr">A</span><span class="cs">♠</span><span class="cc">♠</span></div>
+        <div class="card joker"><span class="jt">JOKER</span><span class="jk">★</span></div>
+        <div class="card red"><span class="cr">K</span><span class="cs">♥</span><span class="cc">♥</span></div>
+      </div>
+      <h1 class="title">Покер</h1>
+      <p class="lede">Безлимитный стол на шестерых. Пять соперников со своим характером: один блефует, другой ждёт тузов, третий коллирует всё подряд.</p>
+    </div>
+
+    <form id="setup" class="menu-panel" autocomplete="off">
+      <fieldset class="modes">
+        <legend>Игра</legend>
+        <label class="mode">
+          <input type="radio" name="mode" value="holdem" checked>
+          <span class="mode-art" aria-hidden="true"><i class="mini"></i><i class="mini"></i></span>
+          <span class="mode-text"><strong>Холдем</strong><span class="d">Две карты на руках и пять на столе. Собирайте лучшую пятёрку из семи.</span></span>
+        </label>
+        <label class="mode">
+          <input type="radio" name="mode" value="omaha">
+          <span class="mode-art four" aria-hidden="true"><i class="mini"></i><i class="mini"></i><i class="mini"></i><i class="mini"></i></span>
+          <span class="mode-text"><strong>Омаха</strong><span class="d">Четыре карты на руках, в комбинации ровно две из них и три со стола. Ставки до размера банка.</span></span>
+        </label>
+        <label class="mode">
+          <input type="radio" name="mode" value="joker">
+          <span class="mode-art" aria-hidden="true"><i class="mini"></i><i class="mini jok">★</i></span>
+          <span class="mode-text"><strong>Холдем с джокерами</strong><span class="d">В колоде два джокера — они заменяют любую карту. Появляется покер: пять одинаковых.</span></span>
+        </label>
+      </fieldset>
+
+      <div class="opts">
+        <div class="opt" role="radiogroup" aria-labelledby="o-opp">
+          <span id="o-opp" class="opt-name">Соперники</span>
+          <div class="seg">
+            <label><input type="radio" name="opponents" value="1"><span>1</span></label>
+            <label><input type="radio" name="opponents" value="2"><span>2</span></label>
+            <label><input type="radio" name="opponents" value="3"><span>3</span></label>
+            <label><input type="radio" name="opponents" value="4"><span>4</span></label>
+            <label><input type="radio" name="opponents" value="5" checked><span>5</span></label>
+          </div>
+        </div>
+        <div class="opt" role="radiogroup" aria-labelledby="o-stack">
+          <span id="o-stack" class="opt-name">Стартовый стек</span>
+          <div class="seg">
+            <label><input type="radio" name="stack" value="500"><span>500</span></label>
+            <label><input type="radio" name="stack" value="1000" checked><span>1 000</span></label>
+            <label><input type="radio" name="stack" value="2000"><span>2 000</span></label>
+            <label><input type="radio" name="stack" value="5000"><span>5 000</span></label>
+          </div>
+        </div>
+        <div class="opt" role="radiogroup" aria-labelledby="o-blinds">
+          <span id="o-blinds" class="opt-name">Блайнды</span>
+          <div class="seg">
+            <label><input type="radio" name="level" value="0"><span>5 / 10</span></label>
+            <label><input type="radio" name="level" value="1" checked><span>10 / 20</span></label>
+            <label><input type="radio" name="level" value="3"><span>25 / 50</span></label>
+          </div>
+        </div>
+        <div class="opt" role="radiogroup" aria-labelledby="o-up">
+          <span id="o-up" class="opt-name">Рост блайндов</span>
+          <div class="seg">
+            <label><input type="radio" name="blindUp" value="1" checked><span>Каждые 10 раздач</span></label>
+            <label><input type="radio" name="blindUp" value="0"><span>Без роста</span></label>
+          </div>
+        </div>
+        <div class="opt" role="radiogroup" aria-labelledby="o-speed">
+          <span id="o-speed" class="opt-name">Темп соперников</span>
+          <div class="seg">
+            <label><input type="radio" name="speed" value="slow"><span>Спокойный</span></label>
+            <label><input type="radio" name="speed" value="normal" checked><span>Обычный</span></label>
+            <label><input type="radio" name="speed" value="fast"><span>Быстрый</span></label>
+          </div>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-raise start">Сесть за стол</button>
+      <button type="button" class="btn btn-ghost quit" id="btn-quit" hidden>Выйти из игры</button>
+    </form>
+  </section>
+
+  <section id="table-screen" class="table-screen" hidden>
+    <header class="topbar">
+      <button id="btn-menu" class="btn btn-ghost" type="button">Меню</button>
+      <dl class="meta">
+        <div><dt>Игра</dt><dd id="m-mode"></dd></div>
+        <div><dt>Блайнды</dt><dd id="m-blinds"></dd><dd class="sub" id="m-level"></dd></div>
+        <div><dt>Раздача</dt><dd id="m-hand"></dd></div>
+      </dl>
+      <div class="tools">
+        <button id="btn-hands" class="btn btn-ghost" type="button" aria-expanded="false" aria-controls="hands">Комбинации</button>
+        <button id="btn-log" class="btn btn-ghost" type="button" aria-expanded="false" aria-controls="log">Журнал</button>
+        <button id="btn-odds" class="btn btn-ghost" type="button" aria-pressed="true">Скрыть шансы</button>
+        <button id="btn-sound" class="btn btn-ghost" type="button" aria-pressed="true">Звук включён</button>
+      </div>
+    </header>
+
+    <main class="stage">
+      <div class="table" id="table">
+        <div class="rail"></div>
+        <div class="felt"><div class="felt-mark" id="felt-mark" aria-hidden="true"></div></div>
+        <div class="center">
+          <div class="pot" id="pot" hidden></div>
+          <div class="board" id="board" role="group" aria-label="Общие карты"></div>
+          <div class="banner" id="banner" role="status" hidden></div>
+        </div>
+        <div id="seats" role="list" aria-label="Игроки за столом"></div>
+      </div>
+      <div class="sr-only" id="announcer" aria-live="polite"></div>
+    </main>
+
+    <footer class="dock" id="dock">
+      <div class="mine">
+        <div class="mine-hand" id="mine-hand"></div>
+        <div class="mine-odds" id="mine-odds" aria-live="polite"></div>
+      </div>
+      <div class="acts-wrap">
+        <div class="turn-note" id="turn-note" aria-live="polite"></div>
+        <div class="acts">
+          <button class="btn btn-fold" id="a-fold" type="button" disabled><span>Пас</span><kbd>F</kbd></button>
+          <button class="btn btn-call" id="a-call" type="button" disabled><span id="a-call-t">Чек</span><kbd>C</kbd></button>
+          <button class="btn btn-raise" id="a-raise" type="button" disabled><span id="a-raise-t">Рейз</span><kbd>R</kbd></button>
+        </div>
+      </div>
+      <div class="sizer">
+        <div class="presets">
+          <button type="button" data-p="min" disabled>Мин</button>
+          <button type="button" data-p="half" disabled>½ банка</button>
+          <button type="button" data-p="pot" disabled>Банк</button>
+          <button type="button" data-p="max" id="preset-max" disabled>Ва-банк</button>
+        </div>
+        <div class="slider-row">
+          <input type="range" id="a-range" aria-label="Размер ставки" disabled>
+          <input type="number" id="a-amt" aria-label="Размер ставки числом" disabled>
+        </div>
+      </div>
+    </footer>
+
+    <aside class="drawer" id="log" aria-labelledby="log-title" hidden>
+      <div class="drawer-head">
+        <h2 id="log-title">Журнал</h2>
+        <button class="btn btn-ghost" type="button" data-close>Закрыть</button>
+      </div>
+      <ol id="log-list" class="log-list"></ol>
+    </aside>
+
+    <aside class="drawer" id="hands" aria-labelledby="hands-title" hidden>
+      <div class="drawer-head">
+        <h2 id="hands-title">Комбинации</h2>
+        <button class="btn btn-ghost" type="button" data-close>Закрыть</button>
+      </div>
+      <p class="drawer-note">От старшей к младшей. В зачёт идёт лучшая пятёрка карт.</p>
+      <p class="drawer-note only-omaha">В Омахе пятёрка собирается ровно из двух карт с руки и трёх со стола.</p>
+      <p class="drawer-note only-joker">Джокер заменяет любую карту и сам подбирает лучшую комбинацию.</p>
+      <ol class="ranks">
+        <li class="only-joker"><b>Покер</b><span>Пять карт одного ранга, возможен только с джокером</span><span class="ex">A A A A <i class="j">★</i></span></li>
+        <li><b>Роял-флеш</b><span>Стрит-флеш от десятки до туза</span><span class="ex"><i class="r">A♥ K♥ Q♥ J♥ 10♥</i></span></li>
+        <li><b>Стрит-флеш</b><span>Пять карт подряд одной масти</span><span class="ex">9♠ 8♠ 7♠ 6♠ 5♠</span></li>
+        <li><b>Каре</b><span>Четыре карты одного ранга</span><span class="ex">K K K K 7</span></li>
+        <li><b>Фулл-хаус</b><span>Тройка и пара</span><span class="ex">Q Q Q 9 9</span></li>
+        <li><b>Флеш</b><span>Пять карт одной масти</span><span class="ex"><i class="r">A♦ J♦ 8♦ 6♦ 2♦</i></span></li>
+        <li><b>Стрит</b><span>Пять карт подряд, туз бывает и младшим: A-2-3-4-5</span><span class="ex">10 9 8 7 6</span></li>
+        <li><b>Тройка</b><span>Три карты одного ранга</span><span class="ex">7 7 7 K 2</span></li>
+        <li><b>Две пары</b><span>Две пары разных рангов</span><span class="ex">J J 4 4 A</span></li>
+        <li><b>Пара</b><span>Две карты одного ранга</span><span class="ex">10 10 K 6 3</span></li>
+        <li><b>Старшая карта</b><span>Ни одной комбинации — сравниваются старшие карты</span><span class="ex">A J 8 5 2</span></li>
+      </ol>
+    </aside>
+  </section>
+
+  <div class="modal" id="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-describedby="modal-text">
+      <h2 id="modal-title"></h2>
+      <p id="modal-text"></p>
+      <div class="modal-actions">
+        <button class="btn btn-raise" id="modal-primary" type="button"></button>
+        <button class="btn btn-ghost" id="modal-secondary" type="button"></button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/cards.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/ui.js"></script>
+</body>
+</html>
