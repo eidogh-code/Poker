@@ -1,0 +1,126 @@
+/* Заставка, лобби сетевой игры, комната и чат. Сначала телефон (одна колонка), на широких экранах — две. */
+
+/* ---------- заставка ---------- */
+.splash {
+  position: fixed; inset: 0; z-index: 100;
+  display: grid; place-items: center;
+  background: #000;
+}
+.splash-logo {
+  width: min(72vw, 420px); height: auto;
+  opacity: 0;
+  transition: opacity var(--fade-ms, 1600ms) ease-in-out;
+}
+.splash.shown .splash-logo { opacity: 1; }
+body.splashing { overflow: hidden; }
+
+/* ---------- кнопки старта в меню ---------- */
+.start-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.start-row .btn { width: 100%; padding: 14px 10px; font-size: 17px; border-radius: 14px; }
+.online-only { display: none; }
+body.online .online-only { display: inline-flex; }
+.badge {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+  background: #E0524F; color: #fff; font-size: 11px; font-weight: 800;
+  display: inline-grid; place-items: center;
+}
+
+/* ---------- лобби ---------- */
+.lobby {
+  min-height: 100vh; height: 100vh; overflow: auto;
+  max-width: 1100px; margin: 0 auto;
+  padding: 14px 16px 20px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.lobby-head { display: flex; align-items: center; gap: 12px; }
+.lobby-head h2 { margin: 0; font-family: var(--font-display); font-size: 34px; font-weight: 700; }
+.net-status {
+  margin-left: auto; padding: 4px 12px; border-radius: 999px;
+  font-size: 13px; font-weight: 700; border: 1px solid var(--line); color: var(--muted);
+}
+.net-status[data-status="online"] { color: #9BE0B2; border-color: rgba(155, 224, 178, .4); }
+.net-status[data-status="reconnecting"], .net-status[data-status="error"] { color: #F07A85; border-color: rgba(240, 122, 133, .4); }
+
+.lobby-server, .lobby-col {
+  padding: 14px; border-radius: 18px; border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(58, 34, 24, .55), rgba(30, 16, 24, .85));
+}
+.lobby-body { display: grid; gap: 14px; }
+.inline-form { display: flex; gap: 8px; }
+.inline-form .text-input { margin: 0; flex: 1; min-width: 0; }
+.field-hint { margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.4; text-wrap: pretty; }
+.field-hint:empty { display: none; }
+.lobby-actions { display: grid; gap: 10px; margin-bottom: 14px; }
+.lobby-actions > .btn { padding: 14px; font-size: 17px; }
+.code-input { text-transform: uppercase; letter-spacing: .2em; font-family: var(--font-display); font-size: 20px; }
+.lobby-sub { margin: 0 0 8px; font-family: var(--font-display); font-size: 24px; font-weight: 700; }
+.lobby-note { margin: 0; padding: 10px 12px; border-radius: 10px; background: rgba(210, 169, 86, .12); color: var(--brass-hi); font-size: 14px; }
+
+.room-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.room-row {
+  display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: center;
+  padding: 10px 12px; border-radius: 14px; border: 1px solid var(--line); background: rgba(0, 0, 0, .2);
+}
+.room-row-main { display: grid; gap: 2px; min-width: 0; }
+.room-row-main b { font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.room-row-main span, .room-seats { color: var(--muted); font-size: 13px; }
+.room-row .btn { grid-row: 1 / 3; grid-column: 2; min-width: 88px; }
+.room-empty { color: var(--muted); font-size: 14px; padding: 10px 2px; line-height: 1.5; }
+
+/* ---------- комната ожидания ---------- */
+.room-title { display: grid; gap: 2px; margin-bottom: 10px; }
+.room-title h3 { margin: 0; font-family: var(--font-display); font-size: 30px; }
+.room-vis { color: var(--muted); font-size: 13px; }
+.room-code {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
+  padding: 10px 12px; border-radius: 14px; background: rgba(0, 0, 0, .3); border: 1px dashed var(--brass-lo);
+}
+.room-code span { color: var(--muted); font-size: 13px; }
+.room-code b { font-family: var(--font-display); font-size: 34px; letter-spacing: .18em; color: var(--brass-hi); }
+.room-code .btn { margin-left: auto; min-height: 36px; padding: 4px 12px; font-size: 13px; }
+.room-meta { margin: 10px 0; color: var(--muted); font-size: 14px; }
+.member-list { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+.member { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 12px; background: rgba(0, 0, 0, .18); }
+.member .avatar { width: 34px; height: 34px; font-size: 17px; }
+.member-nick { font-weight: 700; }
+.member-tag { margin-left: auto; padding: 2px 8px; border-radius: 999px; font-size: 11px; color: var(--muted); border: 1px solid var(--line); }
+.member.offline { opacity: .55; }
+.room-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.room-buttons .btn { padding: 12px; }
+
+/* ---------- чат ---------- */
+.chat-panel { display: flex; flex-direction: column; min-height: 260px; }
+.chat-list {
+  list-style: none; margin: 0; padding: 4px 2px; flex: 1;
+  overflow: auto; display: flex; flex-direction: column; gap: 6px;
+  max-height: 40vh; min-height: 140px;
+}
+.chat-msg { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 8px; align-items: baseline; font-size: 14px; line-height: 1.4; }
+.chat-nick { font-weight: 800; color: var(--brass-hi); }
+.chat-msg.mine .chat-nick { color: #9BE0B2; }
+.chat-text { overflow-wrap: anywhere; }
+.chat-msg time { color: var(--muted); font-size: 11px; }
+.chat-sys { color: var(--muted); font-size: 12px; font-style: italic; text-align: center; }
+.chat-form { display: flex; gap: 8px; margin-top: 8px; }
+.chat-form .text-input { margin: 0; flex: 1; min-width: 0; font-size: 15px; font-weight: 500; }
+#chat .chat-list { max-height: none; padding: 0 22px; }
+#chat .chat-form { padding: 0 22px 22px; }
+
+.create-opts .opt { grid-template-columns: 1fr; gap: 6px; }
+
+@media (min-width: 900px) {
+  .room-layout { grid-template-columns: 1.1fr 1fr; align-items: start; }
+  .lobby-actions { grid-template-columns: auto 1fr; align-items: center; }
+  .chat-list { max-height: 50vh; }
+}
+
+/* Альбомный телефон: всё ниже и плотнее. */
+@media (max-height: 560px) and (orientation: landscape) {
+  .lobby { padding: 8px 12px; gap: 8px; }
+  .lobby-head h2 { font-size: 24px; }
+  .room-layout { grid-template-columns: 1fr 1fr; align-items: start; }
+  .room-title h3 { font-size: 22px; }
+  .room-code b { font-size: 24px; }
+  .chat-list { max-height: 30vh; }
+  .start-row .btn { padding: 8px; font-size: 15px; min-height: 40px; }
+}

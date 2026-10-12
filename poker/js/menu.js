@@ -5,8 +5,9 @@
   const $ = (s) => document.querySelector(s);
   const fmt = (n) => Number(n).toLocaleString('ru-RU');
   const Profile = P.Profile;
-  const PHOTO_SIZE = 160;
-  const PHOTO_QUALITY = 0.85;
+  const PHOTO_SIZES = [160, 128, 96];
+  const PHOTO_QUALITIES = [0.85, 0.7, 0.55];
+  const PHOTO_NET_MAX = 22000; // сервер принимает аватар до 24000 символов base64
   const BONUS_REFRESH_MS = 30 * 1000;
 
   const FELT_NAMES = { oxblood: 'Бордо', emerald: 'Изумруд', sapphire: 'Сапфир', graphite: 'Графит', plum: 'Слива' };
@@ -107,6 +108,23 @@
     $('#dlg-profile').showModal();
   }
 
+  // Сжимаем, пока фото не влезет в лимит сервера: его рассылают всем за столом.
+  function encodePhoto(img) {
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    const canvas = document.createElement('canvas');
+    let data = '';
+    for (const size of PHOTO_SIZES) {
+      canvas.width = size;
+      canvas.height = size;
+      canvas.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+      for (const quality of PHOTO_QUALITIES) {
+        data = canvas.toDataURL('image/jpeg', quality);
+        if (data.length <= PHOTO_NET_MAX) return data;
+      }
+    }
+    return data;
+  }
+
   // Фото обрезается по центру в квадрат и уменьшается до 160×160 — в хранилище лежит пара десятков килобайт.
   function readPhoto(file) {
     return new Promise((resolve, reject) => {
@@ -114,13 +132,8 @@
       const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
-        const side = Math.min(img.naturalWidth, img.naturalHeight);
-        const canvas = document.createElement('canvas');
-        canvas.width = PHOTO_SIZE;
-        canvas.height = PHOTO_SIZE;
-        canvas.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, PHOTO_SIZE, PHOTO_SIZE);
         URL.revokeObjectURL(url);
-        resolve(canvas.toDataURL('image/jpeg', PHOTO_QUALITY));
+        resolve(encodePhoto(img));
       };
       img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Не получилось открыть эту картинку. Попробуйте другую.')); };
       img.src = url;

@@ -7,8 +7,14 @@
   <link rel="stylesheet" href="css/fonts.css">
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/extras.css">
+  <link rel="stylesheet" href="css/online.css">
+  <link rel="stylesheet" href="css/portrait.css">
 </head>
-<body data-felt="oxblood" data-back="lattice">
+<body data-felt="oxblood" data-back="lattice" class="splashing">
+
+  <div class="splash" id="splash" aria-hidden="true">
+    <img class="splash-logo" src="img/logo-bbr.png" alt="">
+  </div>
 
   <section id="menu" class="menu">
     <div class="menu-hero">
@@ -29,6 +35,7 @@
         <div class="profile-actions">
           <button class="btn btn-call bonus" id="btn-bonus" type="button"></button>
           <button class="btn btn-ghost" id="btn-look" type="button">Оформление</button>
+          <button class="btn btn-ghost" type="button" data-music-toggle aria-pressed="true">Музыка включена</button>
           <button class="btn btn-ghost" id="btn-quit" type="button" hidden>Выйти из игры</button>
         </div>
       </div>
@@ -105,8 +112,69 @@
       </div>
 
       <p class="setup-note" id="setup-note" role="alert" hidden></p>
-      <button type="submit" class="btn btn-raise start">Сесть за стол</button>
+      <div class="start-row">
+        <button type="submit" class="btn btn-raise start">Играть с ботами</button>
+        <button type="button" class="btn btn-call online-btn" id="btn-online">Играть по сети</button>
+      </div>
     </form>
+  </section>
+
+  <section id="lobby" class="lobby" hidden>
+    <header class="lobby-head">
+      <button class="btn btn-ghost" id="lobby-back" type="button">Назад</button>
+      <h2>Игра по сети</h2>
+      <span class="net-status" id="net-status" role="status"></span>
+    </header>
+
+    <div class="lobby-server" id="lobby-server" hidden>
+      <label class="field-label" for="server-url">Адрес сервера</label>
+      <div class="inline-form">
+        <input class="text-input" id="server-url" type="text" inputmode="url" placeholder="poker-server.onrender.com" autocomplete="off" spellcheck="false">
+        <button class="btn btn-raise" id="server-save" type="button">Подключиться</button>
+      </div>
+      <p class="field-hint" id="server-hint"></p>
+    </div>
+
+    <div class="lobby-body" id="lobby-main">
+      <section class="lobby-col">
+        <div class="lobby-actions">
+          <button class="btn btn-raise" id="btn-create" type="button">Создать стол</button>
+          <form class="inline-form" id="join-form" autocomplete="off">
+            <input class="text-input code-input" id="join-code" maxlength="6" placeholder="Код комнаты" autocapitalize="characters" spellcheck="false" aria-label="Код комнаты">
+            <button class="btn btn-call" type="submit">Войти</button>
+          </form>
+        </div>
+        <h3 class="lobby-sub">Открытые столы</h3>
+        <ul class="room-list" id="room-list" aria-live="polite"></ul>
+      </section>
+    </div>
+
+    <div class="lobby-body room-layout" id="room-view" hidden>
+      <section class="lobby-col room-info">
+        <div class="room-title"><h3 id="room-name"></h3><span class="room-vis" id="room-vis"></span></div>
+        <div class="room-code">
+          <span>Код комнаты</span><b id="room-code"></b>
+          <button class="btn btn-ghost" id="copy-code" type="button">Скопировать</button>
+        </div>
+        <p class="room-meta" id="room-meta"></p>
+        <ul class="member-list" id="member-list"></ul>
+        <div class="room-buttons">
+          <button class="btn btn-raise" id="btn-start" type="button">Начать игру</button>
+          <button class="btn btn-ghost" id="btn-leave-room" type="button">Выйти из комнаты</button>
+        </div>
+        <p class="field-hint" id="room-hint"></p>
+      </section>
+      <section class="lobby-col chat-panel" aria-labelledby="room-chat-title">
+        <h3 class="lobby-sub" id="room-chat-title">Чат</h3>
+        <ol class="chat-list" id="room-chat-list" aria-live="polite"></ol>
+        <form class="chat-form" data-chat-form autocomplete="off">
+          <input class="text-input" maxlength="200" placeholder="Сообщение" aria-label="Сообщение в чат">
+          <button class="btn btn-call" type="submit">Отправить</button>
+        </form>
+      </section>
+    </div>
+
+    <p class="lobby-note" id="lobby-note" role="alert" hidden></p>
   </section>
 
   <section id="table-screen" class="table-screen" hidden>
@@ -118,10 +186,12 @@
         <div><dt>Раздача</dt><dd id="m-hand"></dd></div>
       </dl>
       <div class="tools">
+        <button id="btn-chat" class="btn btn-ghost online-only" type="button" aria-expanded="false" aria-controls="chat">Чат <span class="badge" id="chat-badge" hidden></span></button>
         <button id="btn-hands" class="btn btn-ghost" type="button" aria-expanded="false" aria-controls="hands">Комбинации</button>
         <button id="btn-log" class="btn btn-ghost" type="button" aria-expanded="false" aria-controls="log">Журнал</button>
         <button id="btn-odds" class="btn btn-ghost" type="button" aria-pressed="true">Скрыть шансы</button>
         <button id="btn-sound" class="btn btn-ghost" type="button" aria-pressed="true">Звук включён</button>
+        <button class="btn btn-ghost" type="button" data-music-toggle aria-pressed="true">Музыка включена</button>
       </div>
     </header>
 
@@ -178,6 +248,18 @@
         <button class="btn btn-ghost" type="button" data-close>Закрыть</button>
       </div>
       <ol id="log-list" class="log-list"></ol>
+    </aside>
+
+    <aside class="drawer" id="chat" aria-labelledby="chat-title" hidden>
+      <div class="drawer-head">
+        <h2 id="chat-title">Чат</h2>
+        <button class="btn btn-ghost" type="button" data-close>Закрыть</button>
+      </div>
+      <ol class="chat-list" id="table-chat-list" aria-live="polite"></ol>
+      <form class="chat-form" data-chat-form autocomplete="off">
+        <input class="text-input" maxlength="200" placeholder="Сообщение" aria-label="Сообщение в чат">
+        <button class="btn btn-call" type="submit">Отправить</button>
+      </form>
     </aside>
 
     <aside class="drawer" id="hands" aria-labelledby="hands-title" hidden>
@@ -255,12 +337,63 @@
     </form>
   </dialog>
 
+  <dialog class="sheet" id="dlg-create" aria-labelledby="dlg-create-title">
+    <form method="dialog" class="sheet-body" id="create-form" autocomplete="off">
+      <h2 id="dlg-create-title">Новый стол</h2>
+      <label class="field-label" for="cr-name">Название</label>
+      <input class="text-input" id="cr-name" name="name" type="text" maxlength="24">
+      <div class="opts create-opts">
+        <div class="opt" role="radiogroup" aria-labelledby="cr-vis"><span id="cr-vis" class="opt-name">Кто видит</span>
+          <div class="seg">
+            <label><input type="radio" name="visibility" value="open" checked><span>Все в лобби</span></label>
+            <label><input type="radio" name="visibility" value="closed"><span>Только по коду</span></label>
+          </div></div>
+        <div class="opt" role="radiogroup" aria-labelledby="cr-mode"><span id="cr-mode" class="opt-name">Игра</span>
+          <div class="seg">
+            <label><input type="radio" name="mode" value="holdem" checked><span>Холдем</span></label>
+            <label><input type="radio" name="mode" value="omaha"><span>Омаха</span></label>
+            <label><input type="radio" name="mode" value="joker"><span>С джокерами</span></label>
+            <label><input type="radio" name="mode" value="short"><span>Шорт-дек</span></label>
+          </div></div>
+        <div class="opt" role="radiogroup" aria-labelledby="cr-buy"><span id="cr-buy" class="opt-name">Взнос</span>
+          <div class="seg">
+            <label><input type="radio" name="buyIn" value="500"><span>500</span></label>
+            <label><input type="radio" name="buyIn" value="1000" checked><span>1 000</span></label>
+            <label><input type="radio" name="buyIn" value="2000"><span>2 000</span></label>
+            <label><input type="radio" name="buyIn" value="5000"><span>5 000</span></label>
+          </div></div>
+        <div class="opt" role="radiogroup" aria-labelledby="cr-lvl"><span id="cr-lvl" class="opt-name">Блайнды</span>
+          <div class="seg">
+            <label><input type="radio" name="level" value="0"><span>5 / 10</span></label>
+            <label><input type="radio" name="level" value="1" checked><span>10 / 20</span></label>
+            <label><input type="radio" name="level" value="3"><span>25 / 50</span></label>
+          </div></div>
+        <div class="opt" role="radiogroup" aria-labelledby="cr-bots"><span id="cr-bots" class="opt-name">Свободные места</span>
+          <div class="seg">
+            <label><input type="radio" name="bots" value="0" checked><span>Только люди</span></label>
+            <label><input type="radio" name="bots" value="1"><span>Добавить ботов</span></label>
+          </div></div>
+      </div>
+      <p class="field-hint" id="create-hint" role="alert"></p>
+      <div class="sheet-actions">
+        <button class="btn btn-raise" value="create" type="submit">Создать</button>
+        <button class="btn btn-ghost" value="cancel" type="submit" formnovalidate>Отмена</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="js/config.js"></script>
   <script src="js/cards.js"></script>
   <script src="js/audio.js"></script>
+  <script src="js/music.js"></script>
   <script src="js/ai.js"></script>
   <script src="js/game.js"></script>
   <script src="js/profile.js"></script>
   <script src="js/menu.js"></script>
+  <script src="js/layout.js"></script>
+  <script src="js/net.js"></script>
+  <script src="js/lobby.js"></script>
+  <script src="js/splash.js"></script>
   <script src="js/ui.js"></script>
 </body>
 </html>

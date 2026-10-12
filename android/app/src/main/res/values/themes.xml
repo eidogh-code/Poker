@@ -3,9 +3,9 @@
     <color name="room">#FF241520</color>
     <color name="felt">#FF6E1F2B</color>
 
-    <!-- Фон окна в цвет комнаты, чтобы при запуске не мелькал белый экран. -->
+    <!-- Чёрный фон окна: запуск плавно переходит в заставку с логотипом, без белой вспышки. -->
     <style name="Theme.Poker" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@color/room</item>
+        <item name="android:windowBackground">@android:color/black</item>
         <item name="android:statusBarColor">@color/room</item>
         <item name="android:navigationBarColor">@color/room</item>
         <item name="android:windowFullscreen">true</item>

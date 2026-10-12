@@ -1,0 +1,17 @@
+{
+  "name": "poker-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Сервер сетевой игры «Покер»: лобби, комнаты по коду, чат. Использует тот же движок, что и клиент.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test --test-force-exit test/server.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "8.22.0"
+  }
+}

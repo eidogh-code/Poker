@@ -1,0 +1,8 @@
+# В образ сервера — только белый список; всё остальное (клиент, Android, ключи) остаётся снаружи.
+*
+!server/package.json
+!server/package-lock.json
+!server/src
+!poker/js/cards.js
+!poker/js/ai.js
+!poker/js/game.js

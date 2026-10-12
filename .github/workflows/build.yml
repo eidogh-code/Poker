@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Тесты движка
-        run: node --test
+        run: node --test tests/cards.test.mjs tests/profile.test.mjs
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -42,6 +42,19 @@ jobs:
         with:
           files: dist/Poker-win-x64.exe
           generate_release_notes: true
+
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Тесты сервера сетевой игры
+        working-directory: server
+        run: |
+          npm ci
+          npm test
 
   android:
     runs-on: ubuntu-latest

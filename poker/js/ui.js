@@ -61,23 +61,8 @@
 
   /* ---------- стол ---------- */
 
-  // На низком экране (телефон) свои карты стоят в ряд с табличкой — фишки и кнопка дилера отходят в стороны.
-  const compactQuery = window.matchMedia('(max-height: 560px)');
-
-  function seatGeometry(i, n, human) {
-    const a = ((90 + (i * 360) / n) * Math.PI) / 180;
-    const cos = Math.cos(a), sin = Math.sin(a);
-    const compact = compactQuery.matches;
-    return {
-      x: 50 + 47 * cos,
-      y: human ? (compact ? 85 : 100) : 50 + 47 * sin,
-      bx: human ? (compact ? 25 : 35) : 50 + 30 * cos,
-      by: human ? (compact ? 74 : 82) : 50 + 29 * sin,
-      dx: human ? (compact ? 75 : 64) : 50 + 37 * cos + 4 * Math.sign(cos || 1),
-      dy: human ? (compact ? 74 : 82) : 50 + 36 * sin,
-      upper: sin < -0.3,
-    };
-  }
+  // Места за столом: альбом, низкий альбом (телефон) и портрет — в layout.js.
+  const seatGeometry = (i, n, human) => P.Layout.seatGeometry(i, n, human);
 
   function seatHTML(p, i, n) {
     const g = game;
@@ -85,11 +70,13 @@
     const reveal = p.human || (g.showdown && !p.folded);
     const cls = ['seat', p.human ? 'me' : '', pos.upper ? 'upper' : '', g.toAct === i ? 'active' : '',
       p.folded && !p.out ? 'folded' : '', p.out ? 'out' : '', p.winner ? 'winner' : ''].join(' ');
-    const cards = p.out ? '' : p.hole.map((c) => cardHTML(c, { hidden: !reveal, fresh: isFresh(c) })).join('');
-    const label = g.showdown && p.handName && !p.folded ? `<span class="hand-label">${p.handName}</span>` : '';
+    // В сети чужие карты приходят пустыми (null), пока сервер их не откроет.
+    const cards = p.out ? '' : p.hole.map((c, k) => cardHTML(c, { hidden: !reveal || !c, fresh: c ? isFresh(c) : false, key: k })).join('');
+    const label = g.showdown && p.handName && !p.folded ? `<span class="hand-label">${esc(p.handName)}</span>` : '';
     const won = p.winner && p.won ? `<span class="won">+${fmt(p.won)}</span>` : '';
-    const tag = p.lastAction && !won ? `<span class="tag">${p.lastAction}</span>` : '';
-    const avatar = p.human ? P.Menu.avatarMarkup(p.avatar) : `<span class="avatar">${esc(p.name[0])}</span>`;
+    const action = p.connected === false ? 'Нет связи' : p.lastAction;
+    const tag = action && !won ? `<span class="tag">${esc(action)}</span>` : '';
+    const avatar = p.avatar ? P.Menu.avatarMarkup(p.avatar) : `<span class="avatar">${esc(Array.from(p.name)[0] || '?')}</span>`;
     let html = `<div class="${cls}" style="left:${pos.x}%;top:${pos.y}%" role="listitem" aria-label="${esc(seatSummary(p, i))}">
       <div class="hole${g.holeN === 4 ? ' four' : ''}">${cards}</div>
       <div class="plate tone-${p.tone}" aria-hidden="true">
@@ -146,7 +133,8 @@
   function renderMine() {
     const me = game.me;
     let text = '';
-    if (me.sittingOut) text = 'Вы отошли';
+    if (!me) text = 'Ждём свободного места — сядете со следующей раздачи';
+    else if (me.sittingOut) text = 'Вы отошли';
     else if (me.out) text = 'Ждём раздачу';
     else if (!me.hole.length) text = 'Раздаём карты';
     else if (game.mode === 'omaha' && game.board.length < 3) text = 'Ждём флоп';
@@ -260,7 +248,7 @@
     }
     if (type === 'call' && limits.toCallFull === 0) action.type = 'check';
     setDockActive(false);
-    game.humanAct(action);
+    game.humanAct(action, game.me.id);
   }
 
   function computeOdds() {
@@ -284,7 +272,7 @@
     setDockActive(false);
     const lines = summary.winners.map((w) => {
       const who = w.human ? 'Вы выигрываете' : `${esc(w.name)} выигрывает`;
-      const hand = summary.type === 'showdown' ? `<span class="b-hand">${w.handName}</span>` : '';
+      const hand = summary.type === 'showdown' ? `<span class="b-hand">${esc(w.handName || '')}</span>` : '';
       return `<div class="${w.human ? 'me' : ''}"><b>${who} ${fmt(w.won)}</b>${hand}</div>`;
     }).join('');
     const banner = $('#banner');
@@ -319,8 +307,9 @@
 
   let sitOutDeadline = 0;
 
-  function onSitOut() {
-    sitOutDeadline = Date.now() + SIT_OUT_MS;
+  // remainingMs — от сервера (в сети), иначе своё время.
+  function onSitOut(remainingMs) {
+    sitOutDeadline = Date.now() + (remainingMs > 0 ? remainingMs : SIT_OUT_MS);
     clearInterval(sitOutTicker);
     const tick = () => {
       const left = sitOutDeadline - Date.now();
@@ -335,14 +324,14 @@
 
   function renderSitOut() {
     const away = Boolean(game && game.me && game.me.sittingOut);
+    // Отсчёт не гасим по снимку: в сети «отошёл» приходит раньше состояния. Гасит его возврат или уход.
     $('#sitout').hidden = !away;
     $('#dock').classList.toggle('away', away);
-    if (!away) clearInterval(sitOutTicker);
   }
 
   function returnToTable() {
     clearInterval(sitOutTicker);
-    if (game) game.returnToTable();
+    if (game && game.me) game.returnToTable(game.me.id);
     renderSitOut();
   }
 
@@ -352,26 +341,33 @@
   function rebuyAmount(balance) {
     const wanted = game ? game.cfg.stack : BUY_INS[0];
     if (balance >= wanted) return wanted;
+    if (game && game.network) return 0; // в сети пополнение — ровно на взнос стола
     const fits = BUY_INS.filter((v) => v <= balance);
     return fits.length ? fits[fits.length - 1] : 0;
   }
 
-  function onBankrupt() {
+  // Один диалог на одно банкротство: повторный вызов (после переподключения) возвращает тот же ответ.
+  // В сети деньги списывает лобби, когда сервер подтвердит пополнение.
+  let bankruptPromise = null;
+
+  function onBankrupt(remainingMs) {
+    if (bankruptPromise) return bankruptPromise;
     clearInterval(nextTicker); // пока решается вопрос с пополнением, раздача не начинается
-    return new Promise((resolve) => {
-      const deadline = Date.now() + BANKRUPT_MS;
+    bankruptPromise = new Promise((resolve) => {
+      const deadline = Date.now() + (remainingMs > 0 ? remainingMs : BANKRUPT_MS);
       let settled = false;
       const finish = (amount) => {
         if (settled) return;
         settled = true;
         clearInterval(bankruptTicker);
+        bankruptPromise = null;
         resolve(amount);
         if (!amount) leaveTable('bankrupt');
       };
       const rebuy = () => {
         const amount = rebuyAmount(P.Profile.get().balance);
         if (!amount) return;
-        P.Profile.update((p) => P.Profile.buyIn(p, amount).state);
+        if (!(game && game.network)) P.Profile.update((p) => P.Profile.buyIn(p, amount).state);
         finish(amount);
       };
       const claimAndRebuy = () => { P.Menu.claimBonus(); rebuy(); };
@@ -391,8 +387,10 @@
         openModal({ kind: 'bankrupt', title: 'Пополнить стек?', text, primary, secondary });
       };
       show();
+      clearInterval(bankruptTicker);
       bankruptTicker = setInterval(show, 500);
     });
+    return bankruptPromise;
   }
 
   /* ---------- диалог ---------- */
@@ -432,7 +430,7 @@
 
   function confirmLeave() {
     if (!game) { toMenu(); return; }
-    const chips = game.me.chips;
+    const chips = game.me ? game.me.chips : 0;
     openModal({
       title: 'Выйти из-за стола?',
       text: `${fmt(chips)} ${plural(chips, ['фишка вернётся', 'фишки вернутся', 'фишек вернутся'])} на баланс. Ставки текущей раздачи пропадут.`,
@@ -455,7 +453,7 @@
     if (kind !== 'street') $('#announcer').textContent = text;
   }
 
-  const DRAWERS = { log: '#btn-log', hands: '#btn-hands' };
+  const DRAWERS = { log: '#btn-log', hands: '#btn-hands', chat: '#btn-chat' };
 
   function toggleDrawer(id, open) {
     Object.keys(DRAWERS).forEach((key) => {
@@ -463,6 +461,11 @@
       $('#' + key).hidden = !show;
       $(DRAWERS[key]).setAttribute('aria-expanded', String(show));
     });
+    if (id === 'chat' && !$('#chat').hidden && P.Lobby) {
+      P.Lobby.markChatRead();
+      const input = $('#chat input');
+      if (input) input.focus();
+    }
   }
 
   function openDrawer() {
@@ -521,17 +524,41 @@
     setDockActive(false);
     game = new P.Game({ ...cfg, nick: profile.nick, avatar: profile.avatar }, {
       onChange: render,
-      onNewHand: () => { seen = new Set(); clearInterval(nextTicker); $('#banner').hidden = true; },
-      onHumanTurn,
+      onNewHand,
+      onHumanTurn: (p, L, deadline) => onHumanTurn(L, deadline),
       onHandEnd,
-      onHandSettled: (chips) => P.Profile.update((p) => P.Profile.setTableChips(p, chips)),
-      onBankrupt,
-      onSitOut,
+      onHandSettled: (p, chips) => P.Profile.update((pr) => P.Profile.setTableChips(pr, chips)),
+      onBankrupt: () => onBankrupt(),
+      onSitOut: () => onSitOut(),
       onError,
       onLog,
       sound: P.Sound.play,
     });
     game.start();
+  }
+
+  function onNewHand() {
+    seen = new Set();
+    clearInterval(nextTicker);
+    $('#banner').hidden = true;
+  }
+
+  // Сетевая игра подключается к тем же экранам: RemoteGame ведёт себя как Game, а сервер вызывает эти функции.
+  function attachSession(session, cfg) {
+    if (game) game.stop();
+    $('#menu').hidden = true;
+    $('#lobby').hidden = true;
+    $('#table-screen').hidden = false;
+    closeModal(false);
+    toggleDrawer(null);
+    $('#banner').hidden = true;
+    $('#log-list').innerHTML = '';
+    $('#felt-mark').textContent = MODE_MARK[cfg.mode];
+    document.body.dataset.mode = cfg.mode;
+    document.body.classList.toggle('online', Boolean(session.network));
+    setDockActive(false);
+    game = session;
+    render();
   }
 
   const LEAVE_NOTES = {
@@ -543,7 +570,9 @@
 
   // Уход из-за стола любым путём: остаток фишек возвращается в кошелёк.
   function leaveTable(reason) {
-    const chips = game ? game.me.chips : 0;
+    // В сети уходим через сервер: он пришлёт «left» с фишками, лобби вернёт их на баланс.
+    if (game && game.network) { game.leave(); return; }
+    const chips = game && game.me ? game.me.chips : 0;
     P.Profile.update((p) => P.Profile.cashOut(p, chips));
     toMenu();
     P.Menu.showNote(LEAVE_NOTES[reason] ? LEAVE_NOTES[reason](chips) : '');
@@ -585,7 +614,7 @@
     if (sheet) { sheet.close('cancel'); return true; }
     if (modalState && modalState.dismissable) { closeModal(true); return true; }
     if (openDrawer()) { toggleDrawer(null); return true; }
-    if ($('#table-screen').hidden) return false;
+    if ($('#table-screen').hidden) return P.Lobby ? P.Lobby.onBack() : false;
     if (!$('#modal').hidden) return true; // банкротство и ошибки закрываются только кнопками
     confirmLeave();
     return true;
@@ -611,6 +640,9 @@
       if (modalState && modalState.dismissable) { closeModal(true); return; }
       if (openDrawer()) { const btn = $(DRAWERS[openDrawer()]); toggleDrawer(null); btn.focus(); return; }
     }
+    // Набор текста (чат, ник, код) не должен нажимать игровые клавиши F/C/R и «Пробел».
+    const typing = e.target && e.target.closest && e.target.closest('input, textarea, select, [contenteditable]');
+    if (typing && e.target.id !== 'a-amt') return;
     if (!game || !$('#modal').hidden || $('#table-screen').hidden || document.querySelector('dialog[open]')) return;
     const inNumber = e.target && e.target.id === 'a-amt';
     if (!$('#banner').hidden && (e.code === 'Space' || e.code === 'Enter')) {
@@ -674,7 +706,51 @@
     });
 
     document.addEventListener('keydown', onKey);
+    // Поворот телефона или смена высоты окна — места за столом пересчитываются.
+    P.Layout.onChange(() => { if (game) render(); });
   }
 
-  document.addEventListener('DOMContentLoaded', init);
+  // Сетевой стол уходит со сцены: в лобби вернёт lobby.js.
+  function closeTable() {
+    [turnTicker, nextTicker, sitOutTicker, bankruptTicker].forEach(clearInterval);
+    bankruptPromise = null;
+    closeModal(false);
+    toggleDrawer(null);
+    setDockActive(false);
+    $('#sitout').hidden = true;
+    $('#table-screen').hidden = true;
+    document.body.classList.remove('online');
+    game = null;
+  }
+
+  function updateMusicButtons() {
+    const on = P.Music.enabled;
+    document.querySelectorAll('[data-music-toggle]').forEach((b) => {
+      b.setAttribute('aria-pressed', String(on));
+      b.textContent = on ? 'Музыка включена' : 'Музыка выключена';
+    });
+  }
+
+  function initMusic() {
+    P.Music.setEnabled(store.get('poker.music', true));
+    updateMusicButtons();
+    // Браузеры разрешают звук только после жеста пользователя — первое касание «будит» музыку.
+    const unlock = () => P.Music.unlock();
+    document.addEventListener('pointerdown', unlock);
+    document.addEventListener('keydown', unlock);
+    document.querySelectorAll('[data-music-toggle]').forEach((b) => b.addEventListener('click', () => {
+      P.Music.setEnabled(!P.Music.enabled);
+      store.set('poker.music', P.Music.enabled);
+      updateMusicButtons();
+    }));
+  }
+
+  P.UI = { attachSession, closeTable, render: () => render(), onHumanTurn, onHandEnd, onNewHand, onLog, onBankrupt, onSitOut };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    init();
+    initMusic();
+    $('#btn-chat').addEventListener('click', () => toggleDrawer('chat'));
+    if (P.Lobby) P.Lobby.init();
+  });
 })(window.Poker = window.Poker || {});

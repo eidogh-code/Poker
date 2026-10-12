@@ -1,0 +1,10 @@
+# Render Blueprint: Dashboard → New → Blueprint → выбрать репозиторий eidogh-code/Poker.
+# Render сам выдаёт HTTPS-адрес вида https://poker-server-xxxx.onrender.com — в игре это wss://poker-server-xxxx.onrender.com
+services:
+  - type: web
+    name: poker-server
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true

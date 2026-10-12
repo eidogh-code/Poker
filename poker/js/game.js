@@ -1,11 +1,14 @@
 // Кэш-стол: блайнды, улицы, торговля, побочные банки, вскрытие, таймер хода, «отошёл», пересадка ботов.
+// Один движок для офлайна (браузер/приложение) и для сервера сетевой игры: за столом может быть
+// сколько угодно людей (human) и ботов, у каждого игрока постоянный id, места меняются между раздачами.
 (function (P) {
   'use strict';
 
   const C = P.Cards;
   const LEVELS = [[5, 10], [10, 20], [15, 30], [25, 50], [50, 100], [75, 150], [100, 200], [150, 300], [200, 400], [300, 600], [500, 1000], [1000, 2000]];
   const HANDS_PER_LEVEL = 10;
-  const TURN_MS = 60 * 1000;      // время на ход
+  const MAX_SEATS = 6;
+  const TURN_MS = 30 * 1000;      // время на ход
   const TURN_CHECK_MS = 250;      // как часто сверяться с часами (переживает паузу приложения)
   const STREETS = ['preflop', 'flop', 'turn', 'river'];
   const STREET_NAME = { preflop: 'Префлоп', flop: 'Флоп', turn: 'Тёрн', river: 'Ривер' };
@@ -32,19 +35,38 @@
   const ABORT = new Error('game aborted');
   const fmt = (n) => Number(n).toLocaleString('ru-RU');
 
+  let botSeq = 0;
+  const botId = () => `bot-${++botSeq}`;
+
+  function freshSeat(info, chips) {
+    return Object.assign({}, info, {
+      chips, hole: [], bet: 0, total: 0,
+      folded: false, allIn: false, acted: false, out: false,
+      sittingOut: false, owesBB: false, newcomer: false, leaving: false,
+      lastAction: '', handName: '', winner: false, won: 0, tone: 0,
+    });
+  }
+
   class Game {
     constructor(cfg, hooks) {
       this.cfg = cfg;
       this.hooks = hooks;
       this.gen = 0;
       this.pending = null;
+      this.pendingKind = null;
+      this.pendingPlayer = null;
       this.returnWaiter = null;
       this.turnDeadline = 0;
       this.players = [];
+      this.joinQueue = [];
     }
 
     get speed() { return SPEED[this.cfg.speed] || SPEED.normal; }
-    get me() { return this.players[0]; }
+    // Офлайн за столом один человек; в сетевой игре «me» не используется.
+    get me() { return this.players.find((p) => p.human); }
+    get dealerId() { return this.players[this.dealer] ? this.players[this.dealer].id : null; }
+
+    byId(id) { return this.players.find((p) => p.id === id) || null; }
 
     start() {
       this.stop();
@@ -52,17 +74,16 @@
       this.mode = cfg.mode;
       this.holeN = cfg.mode === 'omaha' ? 4 : 2;
       this.potLimit = cfg.mode === 'omaha';
-      const human = { name: cfg.nick, avatar: cfg.avatar, human: true };
-      const bots = ROSTER.slice(0, cfg.opponents).map((b) => ({ name: b.name, persona: b.persona }));
-      this.players = [human].concat(bots).map((p, i) => Object.assign(p, {
-        id: i, tone: i, chips: cfg.stack, hole: [], bet: 0, total: 0,
-        folded: false, allIn: false, acted: false, out: false,
-        sittingOut: false, owesBB: false, newcomer: false,
-        lastAction: '', handName: '', winner: false, won: 0,
-      }));
+      // cfg.players — люди за столом (сеть); без него — один офлайн-игрок с ником из профиля.
+      const humans = cfg.players || [{ id: 'me', name: cfg.nick, avatar: cfg.avatar, human: true, chips: cfg.stack }];
+      this.players = humans.map((h) => freshSeat({ id: h.id, name: h.name, avatar: h.avatar, human: true }, h.chips));
+      const botCount = cfg.players ? (cfg.bots ? Math.max(0, cfg.opponents + 1 - this.players.length) : 0) : cfg.opponents;
+      this.addBots(botCount);
+      this.retone();
       this.dealer = C.randInt(this.players.length);
       this.handNo = 0;
       this.level = cfg.level;
+      [this.sb, this.bb] = LEVELS[this.level];
       this.board = [];
       this.pot = 0;
       this.maxBet = 0;
@@ -72,6 +93,17 @@
       this.loop(this.gen);
     }
 
+    addBots(count) {
+      const seated = new Set(this.players.map((p) => p.name));
+      const free = ROSTER.filter((b) => !seated.has(b.name));
+      for (let i = 0; i < count && this.players.length < MAX_SEATS; i++) {
+        const b = free[i] || ROSTER[C.randInt(ROSTER.length)];
+        this.players.push(freshSeat({ id: botId(), name: b.name, persona: b.persona, human: false }, this.cfg.stack));
+      }
+    }
+
+    retone() { this.players.forEach((p, i) => { p.tone = i; }); }
+
     stop() {
       this.gen++;
       this.resolvePending(null);
@@ -79,12 +111,15 @@
     }
 
     // kind — чего именно ждёт игра: 'action' (ход игрока) или 'next' (следующая раздача).
-    // Сигнал не того вида игнорируется, чтобы запоздалое «дальше» не засчиталось как ход.
-    resolvePending(value, kind) {
-      if (!this.pending || (kind && kind !== this.pendingKind)) return;
+    // Сигнал не того вида или не от того игрока игнорируется.
+    resolvePending(value, kind, playerId) {
+      if (!this.pending) return;
+      if (kind && kind !== this.pendingKind) return;
+      if (playerId !== undefined && playerId !== this.pendingPlayer) return;
       const r = this.pending;
       this.pending = null;
       this.pendingKind = null;
+      this.pendingPlayer = null;
       r(value);
     }
 
@@ -95,28 +130,97 @@
       r();
     }
 
-    humanAct(action) { this.resolvePending(action, 'action'); }
+    humanAct(action, playerId) { this.resolvePending(action, 'action', playerId); }
     nextHand() { this.resolvePending(true, 'next'); }
 
     // Игрок вернулся после «отошёл»: со следующей раздачи снова в игре, пропущенный ББ доплатит.
-    returnToTable() {
-      if (!this.me || !this.me.sittingOut) return;
-      this.me.sittingOut = false;
-      this.log(`${this.me.name} возвращается за стол`, 'sys');
+    returnToTable(playerId) {
+      const p = this.byId(playerId);
+      if (!p || !p.sittingOut) return;
+      p.sittingOut = false;
+      this.log(`${p.name} возвращается за стол`, 'sys');
       this.emit();
       this.wakeReturnWaiter();
     }
 
+    /* ---------- места: вход и выход между раздачами ---------- */
+
+    // Сколько ещё людей поместится: боты уступают места людям, поэтому считаем только людей.
+    freeSeatsForHumans() {
+      const humans = this.players.filter((p) => p.human && !p.leaving).length;
+      return MAX_SEATS - humans - this.joinQueue.length;
+    }
+
+    // Новый игрок садится со следующей раздачи (если есть место).
+    addPlayer(info) {
+      if (this.freeSeatsForHumans() <= 0) return false;
+      this.joinQueue.push(info);
+      this.wakeReturnWaiter();
+      return true;
+    }
+
+    // Игрок уходит: его карты сбрасываются сразу (ставки остаются в банке), место освобождается после раздачи.
+    removePlayer(playerId) {
+      this.joinQueue = this.joinQueue.filter((q) => q.id !== playerId);
+      const p = this.byId(playerId);
+      if (!p) return;
+      p.leaving = true;
+      p.sittingOut = false;
+      if (!p.out && !p.folded) {
+        p.folded = true;
+        p.lastAction = 'Ушёл';
+      }
+      // Ход ушедшего — или остался один игрок в раздаче: ждать его решения незачем, банк уже его.
+      if (this.pendingKind === 'action' && (this.pendingPlayer === playerId || this.liveCount() <= 1)) this.resolvePending({ type: 'fold' }, 'action');
+      this.wakeReturnWaiter();
+    }
+
+    applySeatChanges() {
+      const leaving = this.players.filter((p) => p.leaving);
+      if (!leaving.length && !this.joinQueue.length) return;
+      // Кнопка дилера остаётся у того же игрока; если он ушёл — у ближайшего оставшегося перед ним,
+      // чтобы следующий шаг nextSeated() отдал её правильному соседу.
+      const old = this.players;
+      let anchor = old[this.dealer];
+      for (let k = 0; anchor && anchor.leaving && k < old.length; k++) anchor = old[(this.dealer - k - 1 + old.length) % old.length];
+      const dealerPlayer = anchor && !anchor.leaving ? anchor : null;
+      leaving.forEach((p) => this.log(`${p.name} покидает стол`, 'sys'));
+      this.players = this.players.filter((p) => !p.leaving);
+      for (const info of this.joinQueue.splice(0)) {
+        if (this.players.length >= MAX_SEATS) break;
+        // Если стол занят ботами, новый человек занимает место бота.
+        this.players.push(freshSeat({ id: info.id, name: info.name, avatar: info.avatar, human: true }, info.chips));
+        this.log(`${info.name} садится за стол`, 'sys');
+      }
+      const idx = dealerPlayer ? this.players.indexOf(dealerPlayer) : -1;
+      this.dealer = idx >= 0 ? idx : Math.max(0, Math.min(this.dealer, this.players.length - 1));
+      this.retone();
+      this.emit();
+    }
+
+    // В сетевой комнате с ботами новые люди вытесняют ботов, чтобы всем хватало мест.
+    makeRoomForHumans() {
+      const occupied = () => this.players.filter((p) => !p.leaving).length + this.joinQueue.length;
+      while (this.joinQueue.length && occupied() > MAX_SEATS) {
+        const bot = this.players.slice().reverse().find((p) => !p.human && !p.leaving);
+        if (!bot) break;
+        bot.leaving = true;
+      }
+    }
+
+    /* ---------- главный цикл ---------- */
+
     async loop(gen) {
       try {
         for (;;) {
+          this.makeRoomForHumans();
+          this.applySeatChanges();
           await this.waitForPlayers(gen);
           await this.playHand(gen);
-          this.hooks.onHandSettled(this.me.chips);
-          const wasBroke = this.me.chips <= 0;
-          if (!(await this.settleBankruptcy(gen))) return;
-          // После пополнения игрок уже нажал кнопку — следующая раздача начинается сразу.
-          if (!wasBroke) await this.waitPending(gen, 'next');
+          this.players.filter((p) => p.human).forEach((p) => this.hooks.onHandSettled(p, p.chips));
+          await this.settleBankruptcies(gen);
+          if (this.cfg.autoNextMs) await this.sleep(this.cfg.autoNextMs, gen);
+          else if (!this.rebought) await this.waitPending(gen, 'next');
           this.replaceBrokeBots();
         }
       } catch (e) {
@@ -131,8 +235,12 @@
       this.guard(gen);
     }
 
-    async waitPending(gen, kind) {
-      const value = await new Promise((r) => { this.pending = r; this.pendingKind = kind; });
+    async waitPending(gen, kind, playerId) {
+      const value = await new Promise((r) => {
+        this.pending = r;
+        this.pendingKind = kind;
+        this.pendingPlayer = playerId === undefined ? null : playerId;
+      });
       this.guard(gen);
       return value;
     }
@@ -141,40 +249,49 @@
     log(text, kind) { this.hooks.onLog(text, kind || ''); }
 
     // Играть можно, когда за столом хотя бы двое с фишками и не «отошедшие».
-    activeCount() { return this.players.filter((p) => p.chips > 0 && !p.sittingOut).length; }
+    activeCount() { return this.players.filter((p) => p.chips > 0 && !p.sittingOut && !p.leaving).length; }
 
     async waitForPlayers(gen) {
       while (this.activeCount() < 2) {
         this.emit();
         await new Promise((r) => { this.returnWaiter = r; });
         this.guard(gen);
+        this.makeRoomForHumans();
+        this.applySeatChanges();
       }
     }
 
-    // Фишки кончились: интерфейс даёт минуту на пополнение. 0 — игрок ушёл из-за стола.
-    async settleBankruptcy(gen) {
-      if (this.me.chips > 0) return true;
-      const amount = await this.hooks.onBankrupt();
-      this.guard(gen);
-      if (!amount) return false;
-      this.me.chips = amount;
-      this.log(`${this.me.name} пополняет стек на ${fmt(amount)}`, 'sys');
-      this.hooks.onHandSettled(this.me.chips);
+    // Кончились фишки: каждому разорившемуся человеку — минута на пополнение (решает интерфейс или сервер).
+    async settleBankruptcies(gen) {
+      this.rebought = false;
+      const broke = this.players.filter((p) => p.human && p.chips <= 0 && !p.leaving);
+      if (!broke.length) return;
+      await Promise.all(broke.map(async (p) => {
+        const amount = await this.hooks.onBankrupt(p);
+        this.guard(gen);
+        if (amount > 0 && this.players.includes(p)) {
+          p.chips = amount;
+          this.rebought = true;
+          this.log(`${p.name} пополняет стек на ${fmt(amount)}`, 'sys');
+          this.hooks.onHandSettled(p, p.chips);
+        } else {
+          p.leaving = true;
+        }
+      }));
       this.emit();
-      return true;
     }
 
     // Разорившийся бот уходит, на его место садится новый — стол не пустеет.
     replaceBrokeBots() {
       const seated = new Set(this.players.map((p) => p.name));
       for (const p of this.players) {
-        if (p.human || p.chips > 0) continue;
+        if (p.human || p.chips > 0 || p.leaving) continue;
         const free = ROSTER.filter((b) => !seated.has(b.name));
         const pick = free.length ? free[C.randInt(free.length)] : ROSTER[C.randInt(ROSTER.length)];
         this.log(`${p.name} уходит без фишек. За стол садится ${pick.name}`, 'sys');
         seated.delete(p.name);
         seated.add(pick.name);
-        Object.assign(p, { name: pick.name, persona: pick.persona, chips: this.cfg.stack, newcomer: true });
+        Object.assign(p, { id: botId(), name: pick.name, persona: pick.persona, chips: this.cfg.stack, newcomer: true });
       }
     }
 
@@ -205,7 +322,7 @@
 
     resetForHand() {
       for (const p of this.players) {
-        p.out = p.chips <= 0 || p.sittingOut;
+        p.out = p.chips <= 0 || p.sittingOut || p.leaving;
         let note = '';
         if (p.sittingOut) note = 'Отошёл';
         else if (p.out) note = 'Без фишек';
@@ -245,7 +362,7 @@
       this.handNo++;
       this.raiseBlindsIfDue();
       this.resetForHand();
-      if (this.me.sittingOut) this.me.owesBB = true;
+      this.players.forEach((p) => { if (p.sittingOut) p.owesBB = true; });
       this.dealer = this.nextSeated(this.dealer);
       this.deck = C.shuffle(C.makeDeck(this.mode));
       this.hooks.onNewHand();
@@ -257,7 +374,7 @@
       this.post(sbIdx, this.sb, 'Малый блайнд');
       this.post(bbIdx, this.bb, 'Большой блайнд');
       this.maxBet = this.bb;
-      this.payMissedBlind(sbIdx, bbIdx);
+      this.payMissedBlinds(sbIdx, bbIdx);
       this.hooks.sound('chip');
       this.emit();
 
@@ -284,11 +401,12 @@
     }
 
     // Вернувшийся игрок, пропустивший большой блайнд, докладывает его на стол.
-    payMissedBlind(sbIdx, bbIdx) {
-      const me = this.me;
-      if (!me.owesBB || me.out) return;
-      if (me.id !== sbIdx && me.id !== bbIdx) this.post(me.id, this.bb, 'Доплата ББ');
-      me.owesBB = false;
+    payMissedBlinds(sbIdx, bbIdx) {
+      this.players.forEach((p, i) => {
+        if (!p.owesBB || p.out) return;
+        if (i !== sbIdx && i !== bbIdx) this.post(i, this.bb, 'Доплата ББ');
+        p.owesBB = false;
+      });
     }
 
     async dealStreet(street, gen) {
@@ -332,7 +450,6 @@
     }
 
     async bettingRound(first, gen) {
-      const n = this.players.length;
       let idx = first;
       for (let guard = 0; guard < 400; guard++) {
         if (this.liveCount() <= 1 || this.roundDone()) return;
@@ -340,33 +457,38 @@
         if (this.needsAction(p)) {
           this.toAct = idx;
           this.emit();
-          const action = (p.human ? await this.askHuman(p, gen) : await this.askBot(p, gen)) || { type: 'fold' };
-          this.apply(p, action);
+          let action;
+          if (p.leaving) action = { type: 'fold' };
+          else action = (p.human ? await this.askHuman(p, gen) : await this.askBot(p, gen)) || { type: 'fold' };
+          // Пока игрок думал, он мог уйти или остаться в раздаче один — тогда его действие уже ничего не меняет.
+          if (!p.folded && this.liveCount() > 1) {
+            this.apply(p, action);
+            if (action.auto && action.type === 'fold') this.sitOut(p);
+          }
           this.toAct = -1;
-          if (action.auto && action.type === 'fold') this.sitOut(p);
           this.emit();
         }
-        idx = (idx + 1) % n;
+        idx = (idx + 1) % this.players.length;
       }
     }
 
     sitOut(p) {
       p.sittingOut = true;
       this.log(`${p.name} отошёл от стола`, 'sys');
-      this.hooks.onSitOut();
+      this.hooks.onSitOut(p);
     }
 
     // Время хода считается по часам, а не по таймерам: свернули приложение — время всё равно идёт.
     async askHuman(p, gen) {
       const L = this.limits(p);
       this.turnDeadline = Date.now() + TURN_MS;
-      this.hooks.onHumanTurn(L, this.turnDeadline);
+      this.hooks.onHumanTurn(p, L, this.turnDeadline);
       const auto = L.toCallFull > 0 ? { type: 'fold', auto: true } : { type: 'check', auto: true };
       const timer = setInterval(() => {
-        if (Date.now() >= this.turnDeadline) this.resolvePending(auto, 'action');
+        if (Date.now() >= this.turnDeadline) this.resolvePending(auto, 'action', p.id);
       }, TURN_CHECK_MS);
       try {
-        return await this.waitPending(gen, 'action');
+        return await this.waitPending(gen, 'action', p.id);
       } finally {
         clearInterval(timer);
         this.turnDeadline = 0;
@@ -380,9 +502,10 @@
 
     apply(p, a) {
       const L = this.limits(p);
-      let type = a.type;
+      let type = a && typeof a.type === 'string' ? a.type : 'fold';
+      if (!['fold', 'check', 'call', 'raise'].includes(type)) type = 'fold';
       if (type === 'check' && L.toCallFull > 0) type = 'call';
-      if (type === 'raise' && (!L.canRaise || !(a.to > this.maxBet))) type = L.toCallFull > 0 ? 'call' : 'check';
+      if (type === 'raise' && (!L.canRaise || !(Number(a.to) > this.maxBet))) type = L.toCallFull > 0 ? 'call' : 'check';
 
       if (type === 'fold') {
         p.folded = true;
@@ -397,7 +520,7 @@
         p.lastAction = p.allIn ? `Ва-банк ${fmt(p.bet)}` : `Колл ${fmt(pay)}`;
         this.hooks.sound('chip');
       } else {
-        const to = Math.max(L.minTo, Math.min(L.maxTo, Math.round(a.to)));
+        const to = Math.max(L.minTo, Math.min(L.maxTo, Math.round(Number(a.to))));
         const opened = this.maxBet === 0;
         const increase = to - this.maxBet;
         this.pay(p, to - p.bet);
@@ -451,7 +574,8 @@
     // Порядок по часовой стрелке от дилера — для лишней фишки при делёжке.
     clockwise(list) {
       const n = this.players.length;
-      return list.slice().sort((a, b) => ((a.id - this.dealer + n) % n) - ((b.id - this.dealer + n) % n));
+      const seat = (p) => (this.players.indexOf(p) - this.dealer + n) % n;
+      return list.slice().sort((a, b) => seat(a) - seat(b));
     }
 
     resolve() {
@@ -502,4 +626,5 @@
   P.Game = Game;
   P.LEVELS = LEVELS;
   P.TURN_MS = TURN_MS;
+  P.MAX_SEATS = MAX_SEATS;
 })(window.Poker = window.Poker || {});

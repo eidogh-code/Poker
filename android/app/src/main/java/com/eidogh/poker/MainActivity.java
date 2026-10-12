@@ -34,7 +34,7 @@ public class MainActivity extends Activity {
 
     private static final String ASSET_HOST = "appassets.androidplatform.net";
     private static final String START_URL = "https://" + ASSET_HOST + "/assets/index.html";
-    private static final int ROOM_COLOR = Color.rgb(0x24, 0x15, 0x20);
+    private static final int ROOM_COLOR = Color.BLACK; // совпадает с фоном заставки
     private static final String BACK_SCRIPT = "(window.Poker && window.Poker.onBack) ? window.Poker.onBack() : false";
     private static final int PICK_PHOTO = 41;
 

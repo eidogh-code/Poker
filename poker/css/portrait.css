@@ -1,0 +1,334 @@
+/* Телефон вертикально: высокий стол, панель действий в несколько строк, меню в одну колонку.
+   Подключается последним, после style.css и extras.css. Альбомная вёрстка этим файлом не меняется. */
+
+@media (orientation: portrait) {
+  :root {
+    /* Размеры карт: от ширины экрана, но не выше доли высоты — чтобы стол влезал на коротких телефонах. */
+    --p-board-cw: min(14.6vw, 7.4vh, 72px);
+    --p-seat-cw: clamp(24px, min(8.4vw, 4.4vh), 40px);
+    --p-me-cw: min(17vw, 9vh, 84px);
+    --p-gutter: 8px;
+  }
+
+  body { overflow: hidden; }
+
+  /* ---------- главное меню: одна колонка, без прокрутки на 360×740 ---------- */
+  .menu {
+    display: flex; flex-direction: column; justify-content: center; gap: 12px;
+    height: 100vh; height: 100dvh; min-height: 0; overflow: auto;
+    width: 100%; max-width: 560px; margin: 0 auto;
+    padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+  }
+  .menu-hero {
+    display: grid; grid-template-columns: auto minmax(0, 1fr);
+    align-items: center; column-gap: 14px; row-gap: 8px;
+  }
+  .hero-fan { display: none; }
+  .title { grid-column: 1; grid-row: 1; font-size: clamp(58px, 17vw, 96px); }
+  .lede { grid-column: 1 / -1; grid-row: 2; max-width: none; margin: 0; font-size: 14px; line-height: 1.45; }
+  .profile-box { display: contents; }
+  .profile-chip { grid-column: 2; grid-row: 1; min-width: 0; min-height: 52px; padding: 5px 12px 5px 5px; gap: 10px; }
+  .profile-chip .avatar { width: 40px; height: 40px; font-size: 20px; }
+  .profile-chip .who { min-width: 0; }
+  .profile-chip .pname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .profile-chip .pchips { font-size: 19px; white-space: nowrap; }
+  .chip-edit { display: none; }
+  .profile-actions { grid-column: 1 / -1; grid-row: 3; display: flex; flex-wrap: wrap; gap: 6px; }
+  .profile-actions .btn { flex: 1 1 auto; min-height: 44px; padding: 6px 10px; font-size: 13px; }
+
+  .menu-panel { padding: 12px; border-radius: 20px; }
+  .modes { grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+  .modes legend { display: none; }
+  .mode { grid-template-columns: 34px minmax(0, 1fr); gap: 8px; min-height: 52px; padding: 6px 10px 6px 6px; border-radius: 12px; }
+  .mode-art { scale: .62; height: 30px; align-items: center; }
+  .mode strong { font-size: 21px; }
+  .mode .d { display: none; }
+  .opts { margin-bottom: 10px; }
+  .opt { grid-template-columns: 74px minmax(0, 1fr); gap: 8px; padding: 5px 0; }
+  .opt-name { font-size: 12px; line-height: 1.25; }
+  .seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; }
+  .seg span {
+    display: flex; justify-content: center; text-align: center;
+    min-height: 40px; padding: 2px 4px;
+    font-size: 13px; line-height: 1.15;
+  }
+  .setup-note { margin-bottom: 8px; font-size: 13px; }
+  .start { min-height: 52px; padding: 10px; font-size: 18px; }
+  .start-row { gap: 8px; }
+  .start-row .btn { min-height: 52px; padding: 8px 6px; font-size: 16px; line-height: 1.15; }
+
+  /* ---------- экран стола ---------- */
+  .table-screen { height: 100vh; height: 100dvh; grid-template-rows: auto minmax(0, 1fr) auto; }
+
+  /* Верхняя панель: кнопки в строку (сколько бы их ни было), под ними — игра, блайнды и номер раздачи. */
+  .topbar {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: stretch;
+    gap: 2px 4px;
+    padding: max(4px, env(safe-area-inset-top)) var(--p-gutter) 2px;
+  }
+  .topbar .tools { display: contents; }
+  .topbar > .btn, .tools .btn {
+    flex: 1 1 auto; min-width: 0; min-height: 40px; padding: 4px 6px; gap: 4px;
+    font-size: 13px; font-weight: 600; white-space: nowrap;
+  }
+  /* Счётчик непрочитанного в чате — на углу кнопки, чтобы не раздвигать ряд. */
+  .tools .btn { position: relative; }
+  .tools .btn .badge { position: absolute; top: -3px; right: -3px; }
+  /* У кнопок с подменённой подписью исходный текст нулевого размера — отступ до него не нужен. */
+  #btn-odds, #btn-sound, .btn.btn[data-music-toggle] { gap: 0; }
+  /* Длинные подписи «Скрыть шансы» и «Звук включён» заменяются короткими; состояние видно по цвету
+     и зачёркиванию, а для скринридера остаются полный текст и aria-pressed. */
+  #btn-odds, #btn-sound, .btn.btn[data-music-toggle] { font-size: 0; }
+  #btn-odds::before, #btn-sound::before, [data-music-toggle]::before { font-size: 13px; }
+  #btn-odds::before { content: 'Шансы'; content: 'Шансы' / ''; }
+  #btn-sound::before { content: 'Звук'; content: 'Звук' / ''; }
+  [data-music-toggle]::before { content: 'Музыка'; content: 'Музыка' / ''; }
+  .tools .btn[aria-pressed="true"] { color: var(--brass-hi); }
+  .btn[aria-pressed="false"]::before { text-decoration: line-through; text-decoration-thickness: 1.5px; }
+  /* В верхней панели звук и музыка — значками: кнопок в ряду до семи (с чатом в сетевой игре). */
+  .tools #btn-sound, .tools [data-music-toggle] { flex: 0 0 auto; min-width: 40px; padding: 4px 8px; }
+  .tools #btn-sound::before, .tools [data-music-toggle]::before {
+    content: ''; content: '' / '';
+    display: block; width: 22px; height: 22px;
+    background-color: currentColor;
+    -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat;
+  }
+  .tools #btn-sound { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 9h4l5-4v14l-5-4H3z'/%3E%3Cpath d='M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"); }
+  .tools #btn-sound[aria-pressed="false"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 9h4l5-4v14l-5-4H3z'/%3E%3Cpath d='M16 9l6 6M22 9l-6 6' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"); }
+  .tools [data-music-toggle] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 17.5V5.5l11-2.5v12' fill='none' stroke='%23000' stroke-width='2' stroke-linejoin='round'/%3E%3Ccircle cx='6.5' cy='17.5' r='3'/%3E%3Ccircle cx='17.5' cy='15' r='3'/%3E%3C/svg%3E"); }
+  .tools [data-music-toggle][aria-pressed="false"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 17.5V5.5l11-2.5v12' fill='none' stroke='%23000' stroke-width='2' stroke-linejoin='round'/%3E%3Ccircle cx='6.5' cy='17.5' r='3'/%3E%3Ccircle cx='17.5' cy='15' r='3'/%3E%3Cpath d='M3 3l18 18' stroke='%23000' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E"); }
+
+  .meta {
+    order: 1; flex: 1 0 100%;
+    display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline;
+    gap: 0 14px; min-height: 22px;
+  }
+  .meta div { flex-direction: row; align-items: baseline; gap: 5px; }
+  .meta dt { font-size: 11px; }
+  /* Название игры и блайнды понятны без подписи — подпись остаётся только для скринридера. */
+  .meta div:nth-child(-n+2) dt {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  .meta dd { font-size: 18px; line-height: 1.2; }
+  .meta dd.sub { font-size: 11px; }
+
+  /* Стол заполняет всё место между панелями. */
+  .stage { padding: 4px var(--p-gutter) 0; place-items: stretch; }
+  .table { width: 100%; max-width: 640px; height: 100%; aspect-ratio: auto; justify-self: center; }
+  .felt { inset: 10px; }
+  .felt::after { inset: 9% 11%; }
+  .felt-mark { top: 21%; font-size: clamp(34px, 11vw, 64px); }
+
+  /* Общие карты привязаны нижним краем: когда банк скрывается, они не прыгают. */
+  .center { top: auto; bottom: 38.5%; translate: -50% 0; gap: 8px; }
+  .board { --cw: var(--p-board-cw); gap: clamp(4px, 1.2vw, 8px); }
+  .pot { font-size: 18px; padding: 2px 12px 2px 4px; }
+  .chip { width: 16px; height: 16px; }
+
+  /* Места соперников: карты чуть заходят под табличку, подписи не сдвигают место. */
+  .seat { --cw: var(--p-seat-cw); gap: 0; }
+  .seat .plate { position: relative; z-index: 1; }
+  .seat:not(.me) .hole { margin-bottom: calc(var(--cw) * -.3); }
+  .seat.upper:not(.me) .hole { margin-bottom: 0; margin-top: calc(var(--cw) * -.3); }
+  .seat .plate { min-width: 0; max-width: 27vw; gap: 6px; padding: 3px 10px 3px 3px; }
+  .seat .avatar { width: 28px; height: 28px; font-size: 16px; }
+  .seat .who { min-width: 0; }
+  .seat .pname { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .seat .pchips { font-size: 16px; }
+  .seat > span:last-child {
+    position: absolute; top: 100%; left: 50%; translate: -50% 0;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    margin-top: 3px; width: max-content; max-width: 27vw; pointer-events: none;
+  }
+  .seat.upper:not(.me) > span:last-child { top: 0; left: 100%; translate: none; margin: 0 0 0 6px; align-items: flex-start; }
+  .seat .tag, .seat .hand-label { font-size: 11px; padding: 1px 8px; white-space: normal; text-align: center; line-height: 1.2; text-wrap: balance; }
+  /* Длинное название комбинации — не больше двух строк, чтобы не наезжать на общие карты. */
+  .seat .hand-label {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+    overflow: hidden; font-size: 10.5px; padding: 0 2px;
+  }
+  .seat .won { font-size: 14px; padding: 0 8px; }
+  .bet { font-size: 15px; padding: 2px 8px 2px 3px; gap: 4px; }
+  .dealer { width: 24px; height: 24px; font-size: 13px; }
+
+  /* Своё место: крупные карты у нижнего края стола, табличка под ними. */
+  .seat.me { --cw: var(--p-me-cw); translate: -50% -100%; flex-direction: column; gap: 0; }
+  .seat.me .hole { min-height: calc(var(--cw) * 1.4); margin-bottom: calc(var(--cw) * -.2); }
+  /* Омаха: четыре карты плотнее, чтобы веер не задевал соседей снизу. */
+  .seat.me .hole.four { --cw: min(13vw, 7vh, 68px); }
+  .seat.me .hole.four .card + .card { margin-left: calc(var(--cw) * -.4); }
+  .seat:not(.me) .hole.four .card + .card { margin-left: calc(var(--cw) * -.62); }
+  .seat.me .plate { max-width: none; min-width: 132px; padding: 4px 14px 4px 4px; }
+  .seat.me .avatar { width: 34px; height: 34px; font-size: 18px; }
+  .seat.me .pname { font-size: 12px; }
+  .seat.me .pchips { font-size: 19px; }
+  /* Своё действие и выигрыш — значком на правом нижнем углу карт: по бокам места заняты соседями. */
+  .seat.me > span:last-child {
+    top: auto; left: auto; right: 0; bottom: 40px; translate: none; margin: 0;
+    align-items: flex-end; max-width: 46vw; z-index: 2;
+  }
+  .seat.me .tag, .seat.me .won { box-shadow: 0 3px 10px rgba(0, 0, 0, .45); white-space: nowrap; }
+  /* Название своей комбинации и так крупно написано в панели снизу. */
+  .seat.me .hand-label { display: none; }
+
+  /* Баннер победителя — поверх панели действий, кнопка «Следующая раздача» под большим пальцем. */
+  .table > .banner {
+    position: fixed; top: auto; left: 50%;
+    bottom: calc(var(--p-gutter) + env(safe-area-inset-bottom));
+    translate: -50% 0;
+    width: min(calc(100vw - 2 * var(--p-gutter)), 480px);
+    flex-direction: column; align-items: stretch; gap: 10px;
+    padding: 12px; white-space: normal; text-align: center;
+    z-index: 15; /* над панелью действий, но под журналом и окнами */
+  }
+  .banner .lines { justify-items: center; }
+  .banner .lines > div { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; column-gap: 8px; }
+  .banner b { font-size: 21px; }
+  .banner .b-hand { margin-left: 0; font-size: 13px; }
+  .banner .btn { width: 100%; min-height: 48px; font-size: 16px; }
+  /* Когда игрок отошёл, внизу кнопка «Вернуться» — баннер встаёт на место пустых своих карт. */
+  .table-screen:has(.dock.away) .table > .banner {
+    position: absolute; bottom: 1%; width: min(92%, 480px);
+  }
+
+  /* ---------- панель действий: строки сверху вниз ---------- */
+  .dock {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "hand odds"
+      "note timer"
+      "acts acts"
+      "presets presets"
+      "slider slider";
+    grid-template-rows: minmax(30px, auto) 18px auto auto auto;
+    align-items: center; justify-items: stretch;
+    gap: 4px 10px;
+    padding: 4px var(--p-gutter) max(10px, env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, rgba(16, 8, 13, .55), rgba(16, 8, 13, .92) 30%);
+  }
+  .dock .mine, .dock .acts-wrap, .dock .sizer { display: contents; }
+  .mine { text-align: left; }
+  .mine-hand { grid-area: hand; font-size: 21px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mine-odds { grid-area: odds; margin: 0; min-height: 0; font-size: 12px; line-height: 1.2; text-align: right; text-wrap: balance; }
+  .turn-note { grid-area: note; min-height: 0; font-size: 12px; white-space: nowrap; }
+  .turn-timer { grid-area: timer; max-width: none; height: 5px; }
+  .acts { grid-area: acts; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 2px; }
+  .acts .btn {
+    min-width: 0; min-height: 52px; padding: 6px 8px;
+    font-size: 16px; line-height: 1.15; border-radius: 14px;
+    white-space: normal; text-align: center;
+  }
+  .acts kbd { display: none; }
+  .presets { grid-area: presets; gap: 6px; }
+  .presets button { min-height: 42px; padding: 4px; font-size: 14px; border-radius: 10px; white-space: nowrap; }
+  .slider-row { grid-area: slider; gap: 10px; min-height: 44px; }
+  .dock:not(.my-turn) .presets, .dock:not(.my-turn) .slider-row { opacity: .35; transition: opacity .2s; }
+  input[type="number"] { width: 92px; min-height: 42px; padding: 4px 8px; font-size: 20px; }
+  /* Ползунок: видимая дорожка тонкая, а зона касания — во всю высоту строки. */
+  input[type="range"] { height: 44px; background: transparent; }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 8px; border-radius: 999px;
+    background: linear-gradient(90deg, var(--brass) var(--fill, 0%), rgba(255, 255, 255, .14) var(--fill, 0%));
+  }
+  input[type="range"]::-webkit-slider-thumb { width: 28px; height: 28px; margin-top: -10px; }
+  input[type="range"]::-moz-range-track {
+    height: 8px; border-radius: 999px;
+    background: linear-gradient(90deg, var(--brass) var(--fill, 0%), rgba(255, 255, 255, .14) var(--fill, 0%));
+  }
+  input[type="range"]::-moz-range-thumb { width: 22px; height: 22px; }
+
+  /* «Вы отошли»: текст и кнопка столбиком во всю ширину. */
+  .sitout { grid-column: 1 / -1; grid-row: 2 / -1; flex-direction: column; align-items: stretch; gap: 10px; padding: 4px 0 2px; text-align: center; }
+  .sitout-text { font-size: 14px; }
+  .sitout .btn { min-height: 48px; font-size: 16px; }
+
+  /* ---------- выдвижные панели: во весь экран ---------- */
+  .drawer { width: 100%; border-left: 0; padding-bottom: env(safe-area-inset-bottom); }
+  .drawer-head { padding: max(10px, env(safe-area-inset-top)) var(--p-gutter) 6px 18px; }
+  .drawer-head .btn { min-height: 44px; min-width: 44px; }
+  .drawer h2 { font-size: 30px; }
+  .drawer-note { margin: 0 18px 10px; }
+  .log-list, .ranks { padding: 0 18px 18px; }
+
+  /* ---------- окна: снизу во всю ширину, кнопки крупные ---------- */
+  .modal { place-items: end stretch; }
+  .modal-card {
+    width: 100%; max-width: none;
+    padding: 24px 18px max(18px, env(safe-area-inset-bottom));
+    border-radius: 22px 22px 0 0; border-bottom: 0;
+  }
+  .modal-card h2 { font-size: 40px; }
+  .modal-actions { flex-direction: column; align-items: stretch; gap: 8px; }
+  .modal-actions .btn { min-height: 48px; font-size: 16px; }
+
+  .sheet:modal {
+    width: 100%; max-width: 100%; max-height: 92vh; max-height: 92dvh;
+    margin: auto 0 0; border-radius: 22px 22px 0 0; border-bottom: 0;
+  }
+  .sheet-body { padding: 20px 16px max(16px, env(safe-area-inset-bottom)); }
+  .sheet h2 { font-size: 30px; }
+  .sheet-grid { grid-template-columns: 1fr; gap: 12px; }
+  .avatar-preview-wrap { grid-template-columns: auto auto; justify-content: start; align-items: center; gap: 14px; }
+  .avatar-preview-wrap .sheet-hint { grid-column: 1 / -1; max-width: none; text-align: left; }
+  .upload { min-height: 44px; }
+  .text-input { min-height: 48px; }
+  .glyph-grid { grid-template-columns: repeat(4, 44px); gap: 10px; }
+  .swatches { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+  .swatch { padding: 8px 2px; min-height: 44px; }
+  .swatch-felt { width: 100%; max-width: 54px; height: 30px; }
+  .sheet-actions .btn { flex: 1; min-height: 48px; }
+}
+
+/* Узкие портретные экраны (до 400px): плотнее, «Меню» — стрелкой «назад», чтобы в ряд влезали
+   все кнопки, включая «Чат» в сетевой игре. */
+@media (orientation: portrait) and (max-width: 400px) {
+  .topbar { column-gap: 2px; padding-left: 4px; padding-right: 4px; }
+  .topbar > .btn, .tools .btn { padding: 3px; font-size: 12px; }
+  .tools #btn-odds::before { font-size: 12px; }
+  #btn-menu { flex: 0 0 auto; min-width: 40px; font-size: 0; gap: 0; }
+  #btn-menu::before {
+    content: ''; content: '' / '';
+    display: block; width: 22px; height: 22px; background-color: currentColor;
+    -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat;
+    --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20 12H5M11 5l-7 7 7 7' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+  .meta { column-gap: 10px; }
+  .seg span { font-size: 12px; }
+}
+
+/* Короткие портретные экраны: подводка в меню прячется, чтобы форма влезала без прокрутки. */
+@media (orientation: portrait) and (max-height: 760px) {
+  .lede { display: none; }
+}
+
+/* Планшет вертикально: места хватает, всё чуть крупнее и по центру. */
+@media (orientation: portrait) and (min-width: 700px) {
+  :root { --p-gutter: 16px; }
+  /* Одна строка: «Меню», данные раздачи посередине, остальные кнопки справа. */
+  .topbar { flex-wrap: nowrap; gap: 4px 8px; }
+  .topbar > .btn, .tools .btn { flex: 0 0 auto; padding: 6px 12px; font-size: 14px; }
+  .tools #btn-odds::before { font-size: 14px; }
+  /* Здесь подписи помещаются — вместо значков снова слова. */
+  .tools #btn-sound::before, .tools [data-music-toggle]::before {
+    display: inline; width: auto; height: auto; font-size: 14px;
+    background: none; -webkit-mask: none; mask: none;
+  }
+  .tools #btn-sound::before { content: 'Звук'; content: 'Звук' / ''; }
+  .tools [data-music-toggle]::before { content: 'Музыка'; content: 'Музыка' / ''; }
+  .meta { order: 0; flex: 1 1 auto; }
+  .tools .btn { order: 2; }
+  .dock { width: min(100%, 640px); justify-self: center; margin: 0 auto; }
+  :root { --p-seat-cw: clamp(40px, 5vh, 52px); }
+  .seat .plate { max-width: 200px; gap: 8px; padding: 4px 14px 4px 4px; }
+  .seat .avatar { width: 34px; height: 34px; font-size: 19px; }
+  .seat .pname { font-size: 13px; }
+  .seat .pchips { font-size: 19px; }
+  .seat > span:last-child { max-width: 200px; }
+  .seat .tag { font-size: 12px; }
+  .seat .hand-label { font-size: 12px; }
+  .seat .won { font-size: 16px; }
+  .bet { font-size: 17px; }
+  .dealer { width: 28px; height: 28px; font-size: 15px; }
+  .pot { font-size: 21px; }
+}
