@@ -1,14 +1,18 @@
 # Покер
 
-Покер против ботов для Windows. Безлимитный стол до шести игроков, три режима, без регистрации и без интернета.
+Покер против ботов для Windows и Android. Безлимитный стол до шести игроков, три режима, без регистрации и без интернета.
 
 ![Стол в начале раздачи](docs/table.png)
 
 ## Скачать
 
-Готовый `Poker-win-x64.exe` лежит в [релизах](https://github.com/eidogh-code/Poker/releases). Это один файл: скачайте и запустите, установка не нужна.
+Готовые файлы лежат в [релизах](https://github.com/eidogh-code/Poker/releases).
 
-Для работы нужен Microsoft Edge WebView2 Runtime — в Windows 10 и 11 он обычно уже есть. Если его нет, игра сама предложит страницу загрузки.
+**Windows** — `Poker-win-x64.exe`. Один файл: скачайте и запустите, установка не нужна. Нужен Microsoft Edge WebView2 Runtime — в Windows 10 и 11 он обычно уже есть; если нет, игра сама предложит страницу загрузки.
+
+**Android** — `Poker-android.apk`, Android 7.0 и новее. Откройте файл на телефоне и разрешите установку из этого источника, когда система спросит. Игра идёт в альбомной ориентации на весь экран; кнопка «Назад» закрывает панели, а за столом спрашивает, выйти ли из игры.
+
+![Покер на Android](docs/android.png)
 
 ## Режимы
 
@@ -43,7 +47,25 @@ powershell -ExecutionPolicy Bypass -File build.ps1   # dist\Покер.exe
 
 Игру можно запустить и без сборки: откройте `poker/index.html` в браузере.
 
-Каждый пуш в `main` собирается в GitHub Actions — exe лежит в артефактах запуска. Чтобы выпустить релиз, поставьте тег:
+### Android
+
+Нужны JDK 17+ и Android SDK с платформой 35 (проще всего — через Android Studio). Путь к SDK укажите в `android/local.properties` строкой `sdk.dir=…` или переменной `ANDROID_HOME`.
+
+```powershell
+cd android
+.\gradlew.bat assembleRelease   # app\build\outputs\apk\release\Poker-1.0.0-release.apk
+```
+
+APK подписывается ключом из `~/.android/poker-release.properties` (поля `storeFile`, `storePassword`, `keyAlias`, `keyPassword`; путь к ключу — относительно этого файла). Ключ в репозиторий не попадает. Без него сборка подписывается отладочным ключом — такой APK ставится, но поверх него не встанет версия с настоящим ключом.
+
+Чтобы GitHub Actions подписывал APK вашим ключом, добавьте в репозитории секреты (Settings → Secrets and variables → Actions):
+
+- `ANDROID_KEYSTORE_BASE64` — файл ключа в base64: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("$HOME\.android\poker-release.jks")) | Set-Clipboard`
+- `ANDROID_KEYSTORE_PASSWORD` — пароль из `poker-release.properties`.
+
+### Сборка в GitHub
+
+Каждый пуш в `main` собирается в GitHub Actions — exe и apk лежат в артефактах запуска. Чтобы выпустить релиз с обоими файлами, поставьте тег:
 
 ```powershell
 git tag v1.0.1
@@ -53,16 +75,17 @@ git push origin v1.0.1
 ## Устройство
 
 ```
-poker/        игра: HTML, CSS, JS, шрифты — общая для браузера и приложения
+poker/        игра: HTML, CSS, JS, шрифты — общая для браузера, Windows и Android
   js/cards.js   колода, оценка комбинаций, расчёт шансов
   js/game.js    раздача, торговля, побочные банки, вскрытие
   js/ai.js      решения ботов
   js/ui.js      стол, панель действий, меню
 app/          оболочка Windows на .NET 8 + WebView2; игра встраивается в exe
+android/      оболочка Android: Activity с WebView, игра лежит в assets APK
 tests/        тесты движка (node --test)
 build.ps1     сборка dist\Покер.exe
 ```
 
-Настройки и положение окна хранятся в `%LOCALAPPDATA%\PokerNight`.
+В Windows настройки и положение окна хранятся в `%LOCALAPPDATA%\PokerNight`, в Android — в данных приложения.
 
 Шрифты Alumni Sans и Manrope распространяются по лицензии SIL Open Font License 1.1.

@@ -46,16 +46,20 @@
 
   /* ---------- стол ---------- */
 
+  // На низком экране (телефон) свои карты стоят в ряд с табличкой — фишки и кнопка дилера отходят в стороны.
+  const compactQuery = window.matchMedia('(max-height: 560px)');
+
   function seatGeometry(i, n, human) {
     const a = ((90 + (i * 360) / n) * Math.PI) / 180;
     const cos = Math.cos(a), sin = Math.sin(a);
+    const compact = compactQuery.matches;
     return {
       x: 50 + 47 * cos,
-      y: human ? 100 : 50 + 47 * sin,
-      bx: human ? 35 : 50 + 30 * cos,
-      by: human ? 82 : 50 + 29 * sin,
-      dx: human ? 64 : 50 + 37 * cos + 4 * Math.sign(cos || 1),
-      dy: human ? 82 : 50 + 36 * sin,
+      y: human ? (compact ? 89 : 100) : 50 + 47 * sin,
+      bx: human ? (compact ? 25 : 35) : 50 + 30 * cos,
+      by: human ? (compact ? 76 : 82) : 50 + 29 * sin,
+      dx: human ? (compact ? 75 : 64) : 50 + 37 * cos + 4 * Math.sign(cos || 1),
+      dy: human ? (compact ? 76 : 82) : 50 + 36 * sin,
       upper: sin < -0.3,
     };
   }
@@ -412,12 +416,25 @@
     b.textContent = oddsOn ? 'Скрыть шансы' : 'Показать шансы';
   }
 
-  // Мост к окну Windows-приложения (WebView2). В обычном браузере его нет.
-  const host = window.chrome && window.chrome.webview ? window.chrome.webview : null;
+  // Мост к оболочке приложения: WebView2 в Windows или PokerHost в Android. В браузере его нет.
+  const host = window.chrome && window.chrome.webview ? window.chrome.webview
+    : window.PokerHost ? { postMessage: (message) => window.PokerHost.postMessage(message) }
+      : null;
+
+  // Кнопка «Назад» в Android: true — обработали сами, false — пусть приложение закроется.
+  P.onBack = () => {
+    if (modalState && modalState.dismissable) { closeModal(true); return true; }
+    if (openDrawer()) { toggleDrawer(null); return true; }
+    if ($('#table-screen').hidden) return false;
+    if (!$('#modal').hidden) { toMenu(); return true; }
+    confirmLeave();
+    return true;
+  };
 
   function initHost() {
     if (!host) return;
     document.body.classList.add('app-shell');
+    if (window.PokerHost) document.body.classList.add('android');
     $('#btn-quit').hidden = false;
     $('#btn-quit').addEventListener('click', () => host.postMessage('quit'));
     document.addEventListener('keydown', (e) => {

@@ -535,6 +535,90 @@ body:not([data-mode="omaha"]) .only-omaha { display: none; }
   .meta { gap: 14px; }
   .stage { padding: 50px 40px 90px; }
 }
+/* Сенсорные экраны: подсказки клавиш не нужны, нажатие не должно подсвечиваться синим. */
+@media (pointer: coarse) {
+  kbd { display: none; }
+  * { -webkit-tap-highlight-color: transparent; }
+}
+
+/* Телефон в альбомной ориентации: низкий экран, всё ужимается по высоте. */
+@media (max-height: 560px) {
+  body { overflow: hidden; }
+
+  .menu {
+    height: 100vh; overflow: auto;
+    grid-template-columns: minmax(0, .55fr) minmax(0, 1.45fr);
+    align-items: center; gap: 16px;
+    padding: 10px 16px;
+  }
+  .hero-fan { display: none; }
+  .title { font-size: clamp(56px, 9vw, 96px); }
+  .lede { font-size: 13px; margin-top: 8px; }
+  .menu-panel { padding: 10px 14px 12px; border-radius: 18px; }
+  .modes { grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 4px; }
+  .modes legend { display: none; }
+  .mode { grid-template-columns: 1fr; justify-items: center; text-align: center; gap: 4px; padding: 6px; border-radius: 12px; }
+  .mode-art { scale: .62; height: 28px; align-items: center; }
+  .mode strong { font-size: 18px; }
+  .mode .d { display: none; }
+  .opts { display: grid; grid-template-columns: 1fr 1fr; column-gap: 14px; margin-bottom: 8px; }
+  .opt { grid-template-columns: 1fr; gap: 3px; padding: 5px 0; }
+  .opt-name { font-size: 11px; }
+  .seg { gap: 4px; }
+  .seg span { min-height: 30px; padding: 2px 9px; font-size: 12px; }
+  .start { min-height: 40px; padding: 6px; font-size: 16px; }
+
+  .topbar { padding: 6px 10px; gap: 8px; }
+  .meta { gap: 16px; }
+  .meta dt { font-size: 10px; }
+  .meta dd { font-size: 18px; }
+  .meta dd.sub { font-size: 10px; }
+  .tools .btn, .topbar > .btn { min-height: 34px; padding: 4px 9px; font-size: 12px; }
+
+  .stage { padding: 26px 70px 30px; }
+  .table { width: min(100%, calc((100vh - 150px) * 2.3)); aspect-ratio: 2.3 / 1; }
+  .board { --cw: clamp(32px, 10vh, 48px); gap: 4px; }
+  /* Свои карты — рядом с табличкой, иначе на низком экране они наезжают на общие. */
+  .seat.me { flex-direction: row; align-items: center; gap: 6px; translate: -50% -50%; --cw: clamp(32px, 10vh, 46px); }
+  .seat.me .hole { min-height: 0; }
+  .pot { font-size: 16px; padding: 2px 10px 2px 4px; }
+  .chip { width: 15px; height: 15px; }
+  .seat { --cw: clamp(20px, 6vh, 30px); gap: 3px; }
+  .plate { min-width: 92px; gap: 6px; padding: 3px 10px 3px 3px; }
+  .avatar { width: 24px; height: 24px; font-size: 14px; }
+  .pname { font-size: 10px; }
+  .pchips { font-size: 15px; }
+  .tag, .hand-label { font-size: 10px; padding: 1px 7px; }
+  .won { font-size: 14px; padding: 1px 8px; }
+  .bet { font-size: 13px; padding: 1px 7px 1px 3px; }
+  .dealer { width: 20px; height: 20px; font-size: 11px; }
+  .felt-mark { font-size: clamp(28px, 9vh, 52px); }
+  .banner { gap: 10px; padding: 8px 8px 8px 12px; border-radius: 12px; }
+  .banner b { font-size: 16px; }
+  .banner .b-hand { font-size: 12px; }
+  .banner .btn { min-height: 34px; padding: 6px 10px; font-size: 13px; }
+
+  .dock { grid-template-columns: minmax(110px, .8fr) auto minmax(230px, 1fr); justify-items: stretch; align-items: end; gap: 10px; padding: 2px 12px 6px; }
+  .presets button { white-space: nowrap; }
+  .mine { text-align: left; }
+  .mine-hand { font-size: 18px; }
+  .mine-odds { font-size: 11px; margin-top: 0; }
+  .turn-note { font-size: 11px; min-height: 1.2em; }
+  .acts-wrap { gap: 3px; }
+  .acts { gap: 6px; }
+  .acts .btn { min-width: 86px; min-height: 44px; padding: 6px 10px; font-size: 14px; border-radius: 12px; }
+  .sizer { gap: 6px; width: auto; }
+  .presets { gap: 4px; }
+  .presets button { min-height: 32px; padding: 2px 4px; font-size: 11px; }
+  input[type="number"] { width: 72px; padding: 4px 6px; font-size: 16px; }
+
+  .drawer { width: min(320px, 90vw); }
+  .drawer h2 { font-size: 24px; }
+  .ranks li { padding: 6px 0; }
+  .modal-card { padding: 20px 22px 18px; }
+  .modal-card h2 { font-size: 34px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
