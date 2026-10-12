@@ -2,6 +2,8 @@ package com.eidogh.poker;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -12,6 +14,8 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -32,8 +36,10 @@ public class MainActivity extends Activity {
     private static final String START_URL = "https://" + ASSET_HOST + "/assets/index.html";
     private static final int ROOM_COLOR = Color.rgb(0x24, 0x15, 0x20);
     private static final String BACK_SCRIPT = "(window.Poker && window.Poker.onBack) ? window.Poker.onBack() : false";
+    private static final int PICK_PHOTO = 41;
 
     private WebView web;
+    private ValueCallback<Uri[]> photoCallback;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -56,7 +62,8 @@ public class MainActivity extends Activity {
         settings.setDomStorageEnabled(true);
         settings.setTextZoom(100); // вёрстка стола рассчитана на точные размеры
         settings.setAllowFileAccess(false);
-        settings.setAllowContentAccess(false);
+        // content:// нужен, чтобы игра прочитала фото для аватара, выбранное в галерее.
+        settings.setAllowContentAccess(true);
         settings.setSupportZoom(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
 
@@ -75,6 +82,12 @@ public class MainActivity extends Activity {
                 return !ASSET_HOST.equals(url.getHost()); // игра никуда не уходит со своих файлов
             }
         });
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                return pickPhoto(callback);
+            }
+        });
         web.addJavascriptInterface(new Bridge(), "PokerHost");
 
         registerBackHandler();
@@ -89,6 +102,33 @@ public class MainActivity extends Activity {
         public void postMessage(String message) {
             if ("quit".equals(message)) runOnUiThread(MainActivity.this::finish);
         }
+    }
+
+    /** «Загрузить фото» в профиле: открываем системный выбор картинки, результат отдаём странице. */
+    private boolean pickPhoto(ValueCallback<Uri[]> callback) {
+        if (photoCallback != null) photoCallback.onReceiveValue(null);
+        photoCallback = callback;
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("image/*");
+        try {
+            startActivityForResult(Intent.createChooser(intent, "Фото для аватара"), PICK_PHOTO);
+            return true;
+        } catch (ActivityNotFoundException e) {
+            photoCallback = null;
+            callback.onReceiveValue(null);
+            return false;
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == PICK_PHOTO && photoCallback != null) {
+            photoCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));
+            photoCallback = null;
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);
     }
 
     /** «Назад» сначала отдаём игре: она закроет панель или спросит про выход из-за стола. */

@@ -1,0 +1,182 @@
+/* Профиль, оформление (сукно и рубашки), таймер хода, «отошёл», окна. Подключается после style.css. */
+
+/* ---------- сукно стола ---------- */
+[data-felt="oxblood"] { --felt: #6E1F2B; --felt-hi: #8C2B39; --felt-lo: #46111B; }
+[data-felt="emerald"] { --felt: #1E5B3E; --felt-hi: #2A7A53; --felt-lo: #0F3524; }
+[data-felt="sapphire"] { --felt: #1F3F6E; --felt-hi: #2C5A96; --felt-lo: #10233F; }
+[data-felt="graphite"] { --felt: #2C2C30; --felt-hi: #404047; --felt-lo: #151517; }
+[data-felt="plum"] { --felt: #4E2350; --felt-hi: #6A3270; --felt-lo: #2A1030; }
+
+/* ---------- рубашки карт ---------- */
+[data-back="lattice"] {
+  --back-edge: var(--ivory);
+  --back-art:
+    repeating-linear-gradient(45deg, rgba(240, 208, 138, .55) 0 1.5px, transparent 1.5px 8px),
+    repeating-linear-gradient(-45deg, rgba(240, 208, 138, .55) 0 1.5px, transparent 1.5px 8px),
+    linear-gradient(160deg, #8C2B39, #46111B);
+}
+[data-back="diamonds"] {
+  --back-edge: #E8EEF8;
+  --back-art:
+    repeating-linear-gradient(45deg, rgba(200, 214, 240, .4) 0 1px, transparent 1px 6px),
+    repeating-linear-gradient(-45deg, rgba(200, 214, 240, .4) 0 1px, transparent 1px 6px),
+    linear-gradient(160deg, #2B3E73, #141F3F);
+}
+[data-back="deco"] {
+  --back-edge: #D2A956;
+  --back-art:
+    repeating-radial-gradient(circle at 50% 50%, rgba(210, 169, 86, .7) 0 1px, transparent 1px 5px),
+    linear-gradient(160deg, #2A2A2E, #0E0E10);
+}
+[data-back="classic"] {
+  --back-edge: #FFFFFF;
+  --back-art:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, .35) 0 2px, transparent 2px 5px),
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, .2) 0 2px, transparent 2px 5px),
+    linear-gradient(#B8202F, #8E1522);
+}
+[data-back="dots"] {
+  --back-edge: var(--ivory);
+  --back-art:
+    radial-gradient(circle, rgba(240, 230, 200, .6) 1.5px, transparent 2px) 0 0 / 7px 7px,
+    linear-gradient(160deg, #1F6B47, #0F3A26);
+}
+.card.back { background: var(--back-art); border-color: var(--back-edge); }
+
+/* ---------- аватары ---------- */
+.avatar.photo { background-size: cover; background-position: center; color: transparent; }
+.av-0 { background: #F0D08A; }
+.av-1 { background: #E79C86; }
+.av-2 { background: #F2B5C0; }
+.av-3 { background: #A3C9AC; }
+.av-4 { background: #AEBBE4; }
+.av-5 { background: #E4C47C; }
+.av-6 { background: #CDA6DC; }
+.av-7 { background: #9ED3CF; }
+.avatar.big { width: 76px; height: 76px; font-size: 40px; }
+
+/* ---------- карточка профиля в меню ---------- */
+.profile-box { margin-top: 22px; display: grid; gap: 10px; max-width: 420px; }
+.profile-chip {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 14px 8px 8px;
+  border-radius: 999px; border: 1px solid var(--line);
+  background: var(--panel);
+  cursor: pointer; text-align: left;
+  transition: border-color .15s ease-out;
+}
+.profile-chip:hover { border-color: var(--brass); }
+.profile-chip .avatar { width: 44px; height: 44px; font-size: 22px; }
+.profile-chip .pname { font-size: 15px; color: var(--text); font-weight: 700; }
+.profile-chip .pchips { font-size: 22px; color: var(--brass-hi); }
+.chip-edit { margin-left: auto; color: var(--muted); font-size: 13px; }
+.profile-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.profile-actions .btn { padding: 8px 14px; font-size: 14px; }
+.setup-note { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: rgba(210, 169, 86, .12); color: var(--brass-hi); font-size: 14px; line-height: 1.4; }
+
+/* ---------- 4 режима ---------- */
+.modes { grid-template-columns: 1fr 1fr; }
+.mode { grid-template-columns: 56px 1fr; gap: 12px; }
+.mode-art { scale: .85; }
+.mode strong { font-size: 24px; }
+.mini.six { background: var(--ivory); color: var(--ink); font-family: var(--font-display); font-weight: 800; font-size: 16px; }
+.seg input:disabled + span { opacity: .35; cursor: not-allowed; }
+body:not([data-mode="short"]) .only-short { display: none; }
+
+/* ---------- баннер победителя: поверх имён и карт игроков ---------- */
+.table > .banner { top: 38%; bottom: auto; translate: -50% -100%; z-index: 30; }
+
+/* ---------- таймер хода ---------- */
+.turn-timer { width: 100%; max-width: 470px; height: 4px; border-radius: 999px; background: rgba(255, 255, 255, .1); overflow: hidden; }
+.turn-timer i { display: block; height: 100%; background: var(--brass); border-radius: inherit; transition: width .2s linear, background-color .2s; }
+.turn-timer.urgent i { background: #E0524F; }
+
+/* ---------- «отошёл от стола» ---------- */
+.sitout { grid-column: 2 / 4; display: flex; align-items: center; justify-content: center; gap: 16px; }
+.sitout-text { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.4; }
+.sitout-text b { color: var(--text); }
+.dock.away .acts-wrap, .dock.away .sizer { display: none; }
+
+/* ---------- окна «Профиль» и «Оформление» ---------- */
+.sheet {
+  width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 32px);
+  padding: 0; border: 1px solid var(--line); border-radius: 20px;
+  background: linear-gradient(180deg, #3A2218, #1E1018); color: var(--text);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .6);
+}
+.sheet::backdrop { background: rgba(12, 5, 9, .7); backdrop-filter: blur(4px); }
+.sheet-body { margin: 0; padding: 22px 24px; display: grid; gap: 12px; }
+.sheet h2 { margin: 0; font-family: var(--font-display); font-size: 34px; }
+.sheet-grid { display: grid; grid-template-columns: auto 1fr; gap: 20px; align-items: start; }
+.avatar-preview-wrap { display: grid; justify-items: center; gap: 10px; }
+.sheet-hint { margin: 0; max-width: 160px; color: #F07A85; font-size: 12px; text-align: center; }
+.field-label { display: block; margin: 0 0 6px; color: var(--muted); font-size: 13px; }
+.text-input {
+  width: 100%; margin-bottom: 14px; padding: 10px 12px;
+  border-radius: 10px; border: 1px solid var(--line); background: rgba(0, 0, 0, .3);
+  color: var(--text); font: 700 18px var(--font-ui);
+}
+.text-input:focus { border-color: var(--brass); outline: none; }
+.upload { position: relative; overflow: hidden; font-size: 13px; padding: 8px 12px; }
+.upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.glyph-grid { display: grid; grid-template-columns: repeat(4, 44px); gap: 8px; }
+.glyph { position: relative; cursor: pointer; }
+.glyph input { position: absolute; opacity: 0; }
+.glyph .avatar { width: 44px; height: 44px; font-size: 22px; box-shadow: 0 0 0 2px transparent; transition: box-shadow .15s ease-out; }
+.glyph input:checked + .avatar { box-shadow: 0 0 0 3px var(--brass-hi); }
+.glyph input:focus-visible + .avatar { outline: 2px solid var(--brass-hi); outline-offset: 3px; }
+.sheet-actions { display: flex; gap: 10px; margin-top: 4px; }
+.swatches { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 6px; }
+.swatch { position: relative; display: grid; justify-items: center; gap: 6px; padding: 8px 4px; border-radius: 12px; border: 1px solid var(--line); cursor: pointer; font-size: 12px; text-align: center; }
+.swatch input { position: absolute; opacity: 0; }
+.swatch:has(input:checked) { border-color: var(--brass); background: rgba(210, 169, 86, .12); }
+.swatch:has(input:focus-visible) { outline: 2px solid var(--brass-hi); outline-offset: 2px; }
+.swatch-felt { width: 54px; height: 34px; border-radius: 999px; background: radial-gradient(ellipse at 50% 40%, var(--felt-hi), var(--felt) 60%, var(--felt-lo)); box-shadow: inset 0 0 0 3px #3A2418, inset 0 0 0 4px var(--brass-lo); }
+.swatch-back .card { --cw: 30px; display: block; }
+
+/* ---------- телефон: всё помещается без прокрутки ---------- */
+@media (max-height: 560px) {
+  .menu { overflow: hidden; }
+  .lede { display: none; }
+  .title { font-size: clamp(48px, 13vh, 88px); }
+  .profile-box { margin-top: 10px; gap: 8px; }
+  .profile-chip { padding: 5px 10px 5px 5px; gap: 8px; }
+  .profile-chip .avatar { width: 34px; height: 34px; font-size: 18px; }
+  .profile-chip .pname { font-size: 13px; }
+  .profile-chip .pchips { font-size: 17px; white-space: nowrap; }
+  .chip-edit { display: none; }
+  .profile-actions { gap: 6px; }
+  .profile-actions .btn { min-height: 34px; padding: 4px 10px; font-size: 12px; }
+  .modes { grid-template-columns: repeat(4, 1fr); }
+  .mode { grid-template-columns: 1fr; }
+  .mode strong { font-size: 16px; }
+  .setup-note { margin-bottom: 6px; padding: 5px 8px; font-size: 12px; }
+
+  .sheet-body { padding: 12px 16px; gap: 8px; }
+  .sheet h2 { font-size: 24px; }
+  .avatar.big { width: 56px; height: 56px; font-size: 30px; }
+  .text-input { margin-bottom: 8px; padding: 6px 10px; font-size: 16px; }
+  .glyph-grid { grid-template-columns: repeat(8, 36px); gap: 6px; }
+  .glyph .avatar { width: 36px; height: 36px; font-size: 18px; }
+  .swatch { padding: 5px 2px; }
+  .swatch-felt { width: 44px; height: 26px; }
+  .swatch-back .card { --cw: 22px; }
+
+  .table > .banner { top: 40%; }
+  .sitout { gap: 10px; }
+  .sitout-text { font-size: 12px; }
+  .sitout .btn { min-height: 40px; padding: 6px 12px; font-size: 14px; }
+  /* Строку «Ваш ход — N с» закрывают свои карты: время показывает полоса, чей ход — подсветка таблички. */
+  .dock .turn-note { display: none; }
+  .turn-timer { height: 5px; }
+}
+
+/* Совсем низкие экраны (около 320px): убираем картинки режимов и ужимаем отступы. */
+@media (max-height: 380px) {
+  .mode-art { display: none; }
+  .mode { padding: 8px 4px; }
+  .opt { padding: 3px 0; }
+  .seg span { min-height: 28px; padding: 1px 8px; }
+  .start { min-height: 36px; }
+  .profile-actions .btn { min-height: 30px; }
+}

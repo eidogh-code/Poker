@@ -18,7 +18,7 @@ const card = (s) => (s === 'X'
   : { r: RANKS.indexOf(s[0]) + 2, s: SUITS.indexOf(s[1]), id: `${RANKS.indexOf(s[0]) + 2}-${SUITS.indexOf(s[1])}` });
 const cards = (str) => str.split(' ').map(card);
 const holdem = (hole, board, mode = 'holdem') => C.bestScore(mode, cards(hole), cards(board));
-const name = (hole, board, mode) => C.handName(holdem(hole, board, mode));
+const name = (hole, board, mode) => C.handName(holdem(hole, board, mode), mode);
 
 test('называет каждую категорию комбинации', () => {
   assert.equal(name('As Ks', 'Qs Js Ts 2d 3c'), 'Роял-флеш');
@@ -64,10 +64,38 @@ test('джокер заменяет любую карту', () => {
   assert.ok(holdem('X Ad', 'Ac Ah As 2c 3d', 'joker') > holdem('As Ks', 'Qs Js Ts 2d 3c'));
 });
 
-test('колода: 52 карты, с джокерами 54, без повторов', () => {
-  assert.equal(new Set(C.makeDeck(false).map((c) => c.id)).size, 52);
-  assert.equal(new Set(C.makeDeck(true).map((c) => c.id)).size, 54);
-  assert.equal(new Set(C.shuffle(C.makeDeck(true)).map((c) => c.id)).size, 54);
+test('колода: 52 карты, с джокерами 54, в шорт-деке 36 — без повторов', () => {
+  assert.equal(new Set(C.makeDeck('holdem').map((c) => c.id)).size, 52);
+  assert.equal(new Set(C.makeDeck('omaha').map((c) => c.id)).size, 52);
+  assert.equal(new Set(C.makeDeck('joker').map((c) => c.id)).size, 54);
+  assert.equal(new Set(C.shuffle(C.makeDeck('joker')).map((c) => c.id)).size, 54);
+  const short = C.makeDeck('short');
+  assert.equal(new Set(short.map((c) => c.id)).size, 36);
+  assert.ok(short.every((c) => c.r >= 6), 'в шорт-деке нет двоек—пятёрок');
+});
+
+test('шорт-дек: младший стрит A-6-7-8-9', () => {
+  assert.equal(name('Ah 6d', '7c 8s 9h Kd Qc', 'short'), 'Стрит до девятки');
+  // В обычном Холдеме та же рука — просто старшая карта.
+  assert.equal(name('Ah 6d', '7c 8s 9h Kd Qc'), 'Старшая карта A');
+});
+
+test('шорт-дек: флеш старше фулл-хауса, тройка старше стрита', () => {
+  const flush = holdem('Ah 8h', 'Jh 7h 6h Kd Qc', 'short');
+  const fullHouse = holdem('Kh Kd', 'Kc Qs Qh 7d 6c', 'short');
+  assert.ok(flush > fullHouse, 'флеш бьёт фулл-хаус');
+  const trips = holdem('7h 7d', '7c Ks Jh 9d 6c', 'short');
+  const straight = holdem('Th 9d', '8c 7s 6h Kd Qc', 'short');
+  assert.ok(trips > straight, 'тройка бьёт стрит');
+  assert.equal(C.handName(flush, 'short'), 'Флеш до туза');
+  assert.equal(C.handName(trips, 'short'), 'Тройка семёрок');
+  // В обычном Холдеме порядок прежний.
+  assert.ok(holdem('Kh Kd', 'Kc Qs Qh 7d 6c') > holdem('Ah 8h', 'Jh 7h 6h Kd Qc'));
+});
+
+test('шорт-дек: шансы считаются по колоде из 36 карт', () => {
+  const eq = C.equity('short', cards('Ah Ad'), [], 1, 3000);
+  assert.ok(eq > 0.7 && eq < 0.9, `получилось ${eq}`);
 });
 
 test('шансы: пара тузов против случайной руки ≈ 85%', () => {

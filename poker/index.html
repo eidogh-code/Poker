@@ -6,8 +6,9 @@
   <title>Покер</title>
   <link rel="stylesheet" href="css/fonts.css">
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/extras.css">
 </head>
-<body>
+<body data-felt="oxblood" data-back="lattice">
 
   <section id="menu" class="menu">
     <div class="menu-hero">
@@ -17,7 +18,20 @@
         <div class="card red"><span class="cr">K</span><span class="cs">♥</span><span class="cc">♥</span></div>
       </div>
       <h1 class="title">Покер</h1>
-      <p class="lede">Безлимитный стол на шестерых. Пять соперников со своим характером: один блефует, другой ждёт тузов, третий коллирует всё подряд.</p>
+      <p class="lede">Кэш-стол на шестерых против ботов с характером. Садитесь с фишками из баланса, уходите — забираете остаток.</p>
+
+      <div class="profile-box">
+        <button class="profile-chip" id="btn-profile" type="button" aria-label="Профиль: изменить ник и аватар">
+          <span class="avatar" id="me-avatar" aria-hidden="true"></span>
+          <span class="who"><span class="pname" id="me-nick"></span><span class="pchips" id="me-balance"></span></span>
+          <span class="chip-edit">Изменить</span>
+        </button>
+        <div class="profile-actions">
+          <button class="btn btn-call bonus" id="btn-bonus" type="button"></button>
+          <button class="btn btn-ghost" id="btn-look" type="button">Оформление</button>
+          <button class="btn btn-ghost" id="btn-quit" type="button" hidden>Выйти из игры</button>
+        </div>
+      </div>
     </div>
 
     <form id="setup" class="menu-panel" autocomplete="off">
@@ -26,17 +40,22 @@
         <label class="mode">
           <input type="radio" name="mode" value="holdem" checked>
           <span class="mode-art" aria-hidden="true"><i class="mini"></i><i class="mini"></i></span>
-          <span class="mode-text"><strong>Холдем</strong><span class="d">Две карты на руках и пять на столе. Собирайте лучшую пятёрку из семи.</span></span>
+          <span class="mode-text"><strong>Холдем</strong><span class="d">Две карты на руках, пять на столе.</span></span>
         </label>
         <label class="mode">
           <input type="radio" name="mode" value="omaha">
           <span class="mode-art four" aria-hidden="true"><i class="mini"></i><i class="mini"></i><i class="mini"></i><i class="mini"></i></span>
-          <span class="mode-text"><strong>Омаха</strong><span class="d">Четыре карты на руках, в комбинации ровно две из них и три со стола. Ставки до размера банка.</span></span>
+          <span class="mode-text"><strong>Омаха</strong><span class="d">Четыре карты, играют ровно две. Ставки до банка.</span></span>
         </label>
         <label class="mode">
           <input type="radio" name="mode" value="joker">
           <span class="mode-art" aria-hidden="true"><i class="mini"></i><i class="mini jok">★</i></span>
-          <span class="mode-text"><strong>Холдем с джокерами</strong><span class="d">В колоде два джокера — они заменяют любую карту. Появляется покер: пять одинаковых.</span></span>
+          <span class="mode-text"><strong>С джокерами</strong><span class="d">Два джокера заменяют любую карту.</span></span>
+        </label>
+        <label class="mode">
+          <input type="radio" name="mode" value="short">
+          <span class="mode-art" aria-hidden="true"><i class="mini six">6</i><i class="mini six">A</i></span>
+          <span class="mode-text"><strong>Шорт-дек</strong><span class="d">Колода с шестёрок. Флеш старше фулл-хауса.</span></span>
         </label>
       </fieldset>
 
@@ -52,7 +71,7 @@
           </div>
         </div>
         <div class="opt" role="radiogroup" aria-labelledby="o-stack">
-          <span id="o-stack" class="opt-name">Стартовый стек</span>
+          <span id="o-stack" class="opt-name">Взнос за стол</span>
           <div class="seg">
             <label><input type="radio" name="stack" value="500"><span>500</span></label>
             <label><input type="radio" name="stack" value="1000" checked><span>1 000</span></label>
@@ -85,8 +104,8 @@
         </div>
       </div>
 
+      <p class="setup-note" id="setup-note" role="alert" hidden></p>
       <button type="submit" class="btn btn-raise start">Сесть за стол</button>
-      <button type="button" class="btn btn-ghost quit" id="btn-quit" hidden>Выйти из игры</button>
     </form>
   </section>
 
@@ -113,9 +132,10 @@
         <div class="center">
           <div class="pot" id="pot" hidden></div>
           <div class="board" id="board" role="group" aria-label="Общие карты"></div>
-          <div class="banner" id="banner" role="status" hidden></div>
         </div>
         <div id="seats" role="list" aria-label="Игроки за столом"></div>
+        <!-- Баннер — последним слоем стола, поверх имён и карт игроков. -->
+        <div class="banner" id="banner" role="status" hidden></div>
       </div>
       <div class="sr-only" id="announcer" aria-live="polite"></div>
     </main>
@@ -125,8 +145,13 @@
         <div class="mine-hand" id="mine-hand"></div>
         <div class="mine-odds" id="mine-odds" aria-live="polite"></div>
       </div>
+      <div class="sitout" id="sitout" hidden>
+        <p class="sitout-text"><b>Вы отошли от стола.</b> <span id="sitout-left"></span></p>
+        <button class="btn btn-raise" id="btn-return" type="button">Вернуться в игру</button>
+      </div>
       <div class="acts-wrap">
         <div class="turn-note" id="turn-note" aria-live="polite"></div>
+        <div class="turn-timer" id="turn-timer" hidden><i id="turn-timer-bar"></i></div>
         <div class="acts">
           <button class="btn btn-fold" id="a-fold" type="button" disabled><span>Пас</span><kbd>F</kbd></button>
           <button class="btn btn-call" id="a-call" type="button" disabled><span id="a-call-t">Чек</span><kbd>C</kbd></button>
@@ -163,6 +188,7 @@
       <p class="drawer-note">От старшей к младшей. В зачёт идёт лучшая пятёрка карт.</p>
       <p class="drawer-note only-omaha">В Омахе пятёрка собирается ровно из двух карт с руки и трёх со стола.</p>
       <p class="drawer-note only-joker">Джокер заменяет любую карту и сам подбирает лучшую комбинацию.</p>
+      <p class="drawer-note only-short">В шорт-деке колода с шестёрок: флеш старше фулл-хауса, тройка старше стрита, младший стрит — A-6-7-8-9.</p>
       <ol class="ranks">
         <li class="only-joker"><b>Покер</b><span>Пять карт одного ранга, возможен только с джокером</span><span class="ex">A A A A <i class="j">★</i></span></li>
         <li><b>Роял-флеш</b><span>Стрит-флеш от десятки до туза</span><span class="ex"><i class="r">A♥ K♥ Q♥ J♥ 10♥</i></span></li>
@@ -190,10 +216,51 @@
     </div>
   </div>
 
+  <dialog class="sheet" id="dlg-profile" aria-labelledby="dlg-profile-title">
+    <form method="dialog" class="sheet-body" id="profile-form">
+      <h2 id="dlg-profile-title">Профиль</h2>
+      <div class="sheet-grid">
+        <div class="avatar-preview-wrap">
+          <span class="avatar big" id="pf-preview" aria-hidden="true"></span>
+          <label class="btn btn-ghost upload">
+            Загрузить фото
+            <input type="file" id="pf-photo" accept="image/*">
+          </label>
+          <p class="sheet-hint" id="pf-photo-error" role="alert" hidden></p>
+        </div>
+        <div>
+          <label class="field-label" for="pf-nick">Ник за столом</label>
+          <input class="text-input" id="pf-nick" type="text" maxlength="16" autocomplete="nickname" spellcheck="false">
+          <span class="field-label" id="pf-glyphs-label">Аватар</span>
+          <div class="glyph-grid" id="pf-glyphs" role="radiogroup" aria-labelledby="pf-glyphs-label"></div>
+        </div>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn btn-raise" value="save" type="submit">Сохранить</button>
+        <button class="btn btn-ghost" value="cancel" type="submit" formnovalidate>Отмена</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="sheet" id="dlg-look" aria-labelledby="dlg-look-title">
+    <form method="dialog" class="sheet-body" id="look-form">
+      <h2 id="dlg-look-title">Оформление</h2>
+      <span class="field-label" id="look-felt-label">Сукно стола</span>
+      <div class="swatches" id="look-felts" role="radiogroup" aria-labelledby="look-felt-label"></div>
+      <span class="field-label" id="look-back-label">Рубашка карт</span>
+      <div class="swatches" id="look-backs" role="radiogroup" aria-labelledby="look-back-label"></div>
+      <div class="sheet-actions">
+        <button class="btn btn-raise" value="save" type="submit">Готово</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="js/cards.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/ai.js"></script>
   <script src="js/game.js"></script>
+  <script src="js/profile.js"></script>
+  <script src="js/menu.js"></script>
   <script src="js/ui.js"></script>
 </body>
 </html>

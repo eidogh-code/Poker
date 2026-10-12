@@ -2,7 +2,7 @@
 (function (P) {
   'use strict';
 
-  const ITERS = { holdem: 260, omaha: 120, joker: 170 };
+  const ITERS = { holdem: 260, omaha: 120, joker: 170, short: 260 };
   const SHOVE_SHARE = 0.7; // если ставка съедает больше 70% стека — проще пойти ва-банк
 
   function clampTo(L, to) {

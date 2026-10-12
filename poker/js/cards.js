@@ -20,12 +20,14 @@
     return Math.floor(Math.random() * n);
   }
 
-  function makeDeck(withJokers) {
+  // Колода под режим: в «joker» добавляются два джокера, в «short» (шорт-дек) нет двоек—пятёрок.
+  function makeDeck(mode) {
+    const lowest = mode === 'short' ? 6 : 2;
     const deck = [];
     for (let s = 0; s < 4; s++) {
-      for (let r = 2; r <= 14; r++) deck.push({ r, s, id: r + '-' + s });
+      for (let r = lowest; r <= 14; r++) deck.push({ r, s, id: r + '-' + s });
     }
-    if (withJokers) deck.push({ j: true, id: 'J1' }, { j: true, id: 'J2' });
+    if (mode === 'joker') deck.push({ j: true, id: 'J1' }, { j: true, id: 'J2' });
     return deck;
   }
 
@@ -51,8 +53,9 @@
     return { cat: v, ks };
   }
 
-  function straightHigh(present) {
-    for (let h = 14; h >= 5; h--) {
+  // В шорт-деке младший стрит A-6-7-8-9 (туз встаёт перед шестёркой), в остальных — A-2-3-4-5.
+  function straightHigh(present, short) {
+    for (let h = 14; h >= (short ? 10 : 5); h--) {
       let ok = true;
       for (let k = 0; k < 5; k++) {
         const r = h - k === 1 ? 14 : h - k;
@@ -60,11 +63,19 @@
       }
       if (ok) return h;
     }
+    if (short && present[14] && present[6] && present[7] && present[8] && present[9]) return 9;
     return 0;
   }
 
+  // Шорт-дек меняет старшинство: тройка выше стрита, флеш выше фулл-хауса.
+  const SHORT_CAT = { 3: 4, 4: 3, 5: 6, 6: 5 };
+  function swapShortCategory(score) {
+    const { cat, ks } = decode(score);
+    return SHORT_CAT[cat] === undefined ? score : packScore(SHORT_CAT[cat], ks);
+  }
+
   // Лучшая пятёрка из любого набора карт без джокеров.
-  function evalPlain(cards) {
+  function evalPlain(cards, short) {
     const cnt = new Array(15).fill(0);
     const suitRanks = [[], [], [], []];
     for (const c of cards) {
@@ -78,7 +89,7 @@
     if (flushSuit >= 0) {
       const pres = new Array(15).fill(false);
       suitRanks[flushSuit].forEach((r) => { pres[r] = true; });
-      const h = straightHigh(pres);
+      const h = straightHigh(pres, short);
       if (h) return packScore(8, [h]);
     }
 
@@ -103,7 +114,7 @@
       const top = suitRanks[flushSuit].slice().sort((a, b) => b - a).slice(0, 5);
       return packScore(5, top);
     }
-    const sh = straightHigh(cnt.map((n) => n > 0));
+    const sh = straightHigh(cnt.map((n) => n > 0), short);
     if (sh) return packScore(4, [sh]);
     if (trips.length) return packScore(3, [trips[0], ...kick([trips[0]], 2)]);
     if (pairs.length >= 2) return packScore(2, [pairs[0], pairs[1], ...kick([pairs[0], pairs[1]], 1)]);
@@ -161,11 +172,13 @@
 
   function bestScore(mode, hole, board) {
     if (mode === 'omaha') return board.length >= 3 ? evalOmaha(hole, board) : evalPlain(hole);
+    if (mode === 'short') return swapShortCategory(evalPlain(hole.concat(board), true));
     return evalBest(hole.concat(board));
   }
 
-  function handName(score) {
-    const { cat, ks } = decode(score);
+  function handName(score, mode) {
+    // Перестановка категорий шорт-дека обратима: та же операция возвращает обычную категорию.
+    const { cat, ks } = decode(mode === 'short' ? swapShortCategory(score) : score);
     switch (cat) {
       case 9: return 'Покер: пять ' + GEN_PL[ks[0]];
       case 8: return ks[0] === 14 ? 'Роял-флеш' : 'Стрит-флеш до ' + GEN_SG[ks[0]];
@@ -183,7 +196,7 @@
   function equity(mode, hole, board, nOpp, iters) {
     if (nOpp <= 0) return 1;
     const known = new Set(hole.concat(board).map((c) => c.id));
-    const deck = makeDeck(mode === 'joker').filter((c) => !known.has(c.id));
+    const deck = makeDeck(mode).filter((c) => !known.has(c.id));
     const hN = hole.length;
     const needBoard = 5 - board.length;
     const need = nOpp * hN + needBoard;
