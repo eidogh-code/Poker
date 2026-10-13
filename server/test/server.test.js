@@ -129,6 +129,17 @@ test('раздача на двоих: свои карты видны, чужие
   const after = await a.next((m) => m.t === 'state' && m.s.pot === 0 && m.s.players.every((p) => p.bet === 0));
   const total = after.s.players.reduce((s, p) => s + p.chips, 0);
   assert.equal(total, 1000, 'фишки не теряются и не появляются');
+
+  // Раздача попала в рейтинг обоим, итоги взаимно гасятся; до таблицы — ещё несколько раздач.
+  a.send({ t: 'rating' });
+  b.send({ t: 'rating' });
+  const ra = await a.next((m) => m.t === 'rating');
+  const rb = await b.next((m) => m.t === 'rating');
+  assert.equal(ra.me.hands, 1);
+  assert.equal(ra.me.profit + rb.me.profit, 0);
+  assert.equal(ra.me.place, null);
+  assert.ok(ra.me.needHands > 0);
+  assert.ok(!JSON.stringify(ra).includes(a.key), 'ключ устройства не утекает');
   stopA(); stopB();
   a.close(); b.close();
 });

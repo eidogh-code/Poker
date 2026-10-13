@@ -5,6 +5,7 @@ const http = require('node:http');
 const { WebSocketServer } = require('ws');
 const { Lobby, safeSend } = require('./rooms');
 const V = require('./validate');
+const { Ratings, storeFromEnv } = require('./ratings');
 
 const PORT = Number(process.env.PORT) || 8787;
 const MAX_PAYLOAD = 48 * 1024;            // аватар-фото (до 24 КБ) + запас
@@ -18,12 +19,14 @@ const CHAT_GAP_MS = 700;                   // не чаще одного соо�
 const CREATE_GAP_MS = 10000;               // не чаще одного нового стола в 10 с
 const HEARTBEAT_MS = 25000;
 const SESSION_IDLE_MS = 10 * 60 * 1000;
+const RATING_GAP_MS = 1000;               // таблицу рейтинга — не чаще раза в секунду
 
 // Адрес клиента: за прокси хостинга — первый адрес из X-Forwarded-For, иначе адрес сокета.
 const ipOf = (req) => String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '?';
 
-function createServer() {
-  const lobby = new Lobby();
+// ratings — общий рейтинг; по умолчанию только в памяти (тесты), в работе — с хранилищем из окружения.
+function createServer({ ratings = new Ratings() } = {}) {
+  const lobby = new Lobby(ratings);
   const perIp = new Map();
 
   const server = http.createServer((req, res) => {
@@ -40,7 +43,7 @@ function createServer() {
       return;
     }
     perIp.set(ip, (perIp.get(ip) || 0) + 1);
-    const conn = { ws, ip, session: null, alive: true, windowStart: Date.now(), count: 0, lastChat: 0 };
+    const conn = { ws, ip, session: null, alive: true, windowStart: Date.now(), count: 0, lastChat: 0, lastRating: 0 };
     ws.__conn = conn;
     conn.helloTimer = setTimeout(() => { if (!conn.session) ws.close(1008, 'hello timeout'); }, HELLO_TIMEOUT_MS);
     ws.on('pong', () => { conn.alive = true; });
@@ -74,7 +77,7 @@ function createServer() {
   }, HEARTBEAT_MS);
   wss.on('close', () => clearInterval(heartbeat));
 
-  return { server, wss, lobby, close: () => { clearInterval(heartbeat); wss.close(); server.close(); } };
+  return { server, wss, lobby, ratings, close: () => { clearInterval(heartbeat); ratings.close(); wss.close(); server.close(); } };
 }
 
 const send = (ws, msg) => safeSend(ws, JSON.stringify(msg));
@@ -106,6 +109,13 @@ function onMessage(lobby, conn, data) {
 
   switch (msg.t) {
     case 'list': send(ws, { t: 'rooms', rooms: lobby.list() }); break;
+    case 'rating': {
+      const now = Date.now();
+      if (now - conn.lastRating < RATING_GAP_MS) break;
+      conn.lastRating = now;
+      send(ws, { t: 'rating', ...lobby.ratings.board(session.rid) });
+      break;
+    }
     case 'create': {
       const now = Date.now();
       if (now - (session.lastCreate || 0) < CREATE_GAP_MS) { fail(ws, 'Новый стол можно создавать не чаще раза в 10 секунд'); break; }
@@ -183,8 +193,17 @@ if (require.main === module) {
   // Последний рубеж: ошибка в одной комнате не должна ронять сервер со всеми остальными столами.
   process.on('uncaughtException', (e) => console.error('uncaughtException:', e));
   process.on('unhandledRejection', (e) => console.error('unhandledRejection:', e));
-  const { server } = createServer();
+  const ratings = new Ratings(storeFromEnv());
+  ratings.load();
+  const { server } = createServer({ ratings });
   server.listen(PORT, () => console.log(`Покер-сервер слушает порт ${PORT}`));
+  // Хостинг усыпляет и перезапускает сервер сигналом — успеваем сохранить рейтинг.
+  const shutdown = async () => {
+    await ratings.flush();
+    process.exit(0);
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
 }
 
 module.exports = { createServer };

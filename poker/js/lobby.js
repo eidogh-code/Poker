@@ -274,6 +274,77 @@
     if (send({ t: 'chat', text })) input.value = '';
   }
 
+  /* ---------- рейтинг ---------- */
+
+  const RATING_GAP_MS = 1100; // сервер отвечает на запрос рейтинга не чаще раза в секунду
+  let lastRatingAt = 0;
+  let ratingTimer = 0;
+  const signed = (n) => (n > 0 ? `+${fmt(n)}` : fmt(n));
+  const winRate = (r) => (r.hands ? `${Math.round((r.wins / r.hands) * 100)}%` : '—');
+  const handsWord = (n) => {
+    const d = n % 10;
+    const dd = n % 100;
+    if (d === 1 && dd !== 11) return 'раздача';
+    if (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) return 'раздачи';
+    return 'раздач';
+  };
+
+  function openRating() {
+    $('#dlg-rating').showModal();
+    requestRating();
+  }
+
+  function requestRating() {
+    const status = $('#rating-status');
+    if (P.Net.status !== 'online') { status.textContent = OFFLINE_NOTE; return; }
+    const btn = $('#rating-refresh');
+    btn.disabled = true;
+    setTimeout(() => { btn.disabled = false; }, RATING_GAP_MS);
+    status.textContent = 'Загружаем…';
+    // Слишком частый запрос сервер молча пропускает — отправляем, когда окно в секунду истечёт.
+    const wait = Math.max(0, lastRatingAt + RATING_GAP_MS - Date.now());
+    clearTimeout(ratingTimer);
+    ratingTimer = setTimeout(() => {
+      lastRatingAt = Date.now();
+      P.Net.send({ t: 'rating' });
+    }, wait);
+  }
+
+  function ratingRow(r) {
+    const tr = document.createElement('tr');
+    if (r.me) tr.className = 'mine';
+    const cell = (tag, text, cls) => {
+      const el = document.createElement(tag);
+      el.textContent = text;
+      if (cls) el.className = cls;
+      if (tag === 'th') el.scope = 'row';
+      tr.appendChild(el);
+    };
+    cell('td', r.place, 'place');
+    cell('th', r.nick, 'nick');
+    cell('td', signed(r.profit), r.profit >= 0 ? 'plus' : 'minus');
+    cell('td', fmt(r.hands));
+    cell('td', winRate(r));
+    return tr;
+  }
+
+  function renderRating(m) {
+    $('#rating-rows').replaceChildren(...m.top.map(ratingRow));
+    $('#rating-table').hidden = !m.top.length;
+    $('#rating-status').textContent = m.top.length
+      ? `Игроков в рейтинге: ${fmt(m.total)}`
+      : 'В рейтинге пока никого — сыграйте с друзьями по сети.';
+    const me = $('#rating-me');
+    me.hidden = false;
+    if (!m.me) {
+      me.textContent = `Вы ещё не играли по сети с живыми соперниками. В рейтинг попадают после ${m.minHands} ${handsWord(m.minHands)}.`;
+    } else if (m.me.place) {
+      me.textContent = `Ваше место — ${m.me.place}. Выигрыш ${signed(m.me.profit)} за ${fmt(m.me.hands)} ${handsWord(m.me.hands)}.`;
+    } else {
+      me.textContent = `Ваш выигрыш ${signed(m.me.profit)}. До рейтинга осталось ${m.me.needHands} ${handsWord(m.me.needHands)}.`;
+    }
+  }
+
   /* ---------- сообщения сервера ---------- */
 
   function onRoom(m) {
@@ -329,9 +400,14 @@
 
   function bindNet() {
     const N = P.Net;
-    N.on('status', (s) => { renderStatus(s); if (s === 'online' && !state.room) requestList(); });
+    N.on('status', (s) => {
+      renderStatus(s);
+      if (s === 'online' && !state.room) requestList();
+      if (s === 'online' && $('#dlg-rating').open) requestRating();
+    });
     N.on('welcome', onWelcome);
     N.on('rooms', (m) => { state.rooms = m.rooms; renderRooms(); });
+    N.on('rating', renderRating);
     N.on('room', onRoom);
     N.on('state', onState);
     N.on('turn', (m) => { if (state.remote && m.remaining > 0) P.UI.onHumanTurn(m.limits, Date.now() + m.remaining); });
@@ -394,6 +470,8 @@
       P.Net.connect();
     });
     $('#btn-create').addEventListener('click', openCreate);
+    $('#btn-rating').addEventListener('click', openRating);
+    $('#rating-refresh').addEventListener('click', requestRating);
     $('#create-form').addEventListener('submit', onCreateSubmit);
     $('#join-form').addEventListener('submit', (e) => { e.preventDefault(); join($('#join-code').value); });
     $('#room-list').addEventListener('click', (e) => {

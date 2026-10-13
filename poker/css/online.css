@@ -124,3 +124,48 @@ body.online .online-only { display: inline-flex; }
   .chat-list { max-height: 30vh; }
   .start-row .btn { padding: 8px; font-size: 15px; min-height: 40px; }
 }
+
+/* ---------- рейтинг ---------- */
+.rating-sheet { width: min(640px, calc(100vw - 32px)); }
+.rating-sheet .sheet-body { max-height: calc(100vh - 34px); max-height: calc(100dvh - 34px); grid-template-rows: auto auto auto auto minmax(0, 1fr) auto; }
+.rating-sheet .field-hint { margin: 0; }
+.rating-me {
+  padding: 10px 12px; border-radius: 12px;
+  background: rgba(210, 169, 86, .14); border: 1px solid var(--line);
+  font-weight: 700; line-height: 1.4;
+}
+.rating-scroll { min-height: 0; overflow: auto; border-radius: 12px; }
+.rating-table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.rating-table th, .rating-table td { padding: 8px 6px; text-align: right; white-space: nowrap; }
+.rating-table thead th {
+  position: sticky; top: 0; background: #2C1913;
+  color: var(--muted); font-size: 12px; font-weight: 700;
+}
+.rating-table .nick, .rating-table thead th:nth-child(2) { text-align: left; }
+.rating-table .nick { max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; font-weight: 700; }
+.rating-table .place { color: var(--muted); }
+.rating-table tbody tr { border-top: 1px solid var(--line); }
+.rating-table tbody tr:nth-child(-n + 3) .place { color: var(--brass-hi); font-weight: 800; }
+.rating-table tr.mine { background: rgba(210, 169, 86, .16); }
+.rating-table .plus { color: #9BE0B2; }
+.rating-table .minus { color: #F07A85; }
+@media (max-width: 420px) {
+  .rating-table { font-size: 13px; }
+  .rating-table th:nth-child(5), .rating-table td:nth-child(5) { display: none; }
+}
+
+/* ---------- об игре ---------- */
+.credits { margin: 0; display: grid; gap: 10px; }
+.credits div { display: grid; gap: 2px; }
+.credits dt { color: var(--muted); font-size: 13px; }
+.credits dd { margin: 0; font-size: 20px; font-weight: 700; }
+.info-text { margin: 4px 0 0; line-height: 1.5; text-wrap: pretty; }
+
+/* Узкий экран: «Назад», заголовок и «Рейтинг» в первой строке, статус связи — под ними. */
+.lobby-head h2 { white-space: nowrap; }
+@media (max-width: 520px) {
+  .lobby-head { flex-wrap: wrap; row-gap: 8px; }
+  .lobby-head h2 { font-size: 26px; }
+  #btn-rating { margin-left: auto; }
+  .net-status { order: 3; margin-left: 0; }
+}

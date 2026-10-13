@@ -21,3 +21,6 @@ android/keystore.properties
 
 # Сервер
 server/node_modules/
+
+# Рейтинг локального сервера
+server/data/

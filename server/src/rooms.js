@@ -3,6 +3,7 @@
 
 const crypto = require('node:crypto');
 const { loadEngine } = require('./engine');
+const { ratingId } = require('./ratings');
 
 const P = loadEngine();
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // без похожих 0/O и 1/I
@@ -34,6 +35,7 @@ class Room {
     this.settings = settings;
     this.hostId = host.id;
     this.members = new Map();   // id → сессия
+    this.raters = new Map();    // id → { rid, nick } — и для ушедших посреди раздачи, их итог тоже идёт в рейтинг
     this.chat = [];
     this.game = null;
     this.turns = new Map();     // id → { limits, deadline } — чтобы вернуть ход после переподключения
@@ -75,6 +77,7 @@ class Room {
   join(session) {
     if (this.game && !this.game.addPlayer({ id: session.id, name: session.nick, avatar: session.avatar, chips: this.settings.buyIn })) return false;
     this.members.set(session.id, session);
+    this.raters.set(session.id, { rid: session.rid, nick: session.nick });
     session.roomCode = this.code;
     this.clearGrace(session.id);
     this.touch();
@@ -164,6 +167,7 @@ class Room {
       },
       onHandEnd: (summary) => {
         this.turns.clear();
+        this.recordRating(summary);
         const winners = summary.winners.map((w) => ({ id: w.id, name: w.name, won: w.won, handName: w.handName }));
         this.flushNow();
         this.broadcast({ t: 'handEnd', summary: { type: summary.type, winners }, nextIn: AUTO_NEXT_MS });
@@ -178,6 +182,28 @@ class Room {
       onLog: (text, kind) => this.broadcast({ t: 'log', text, kind }),
       sound: (kind) => this.broadcast({ t: 'sound', kind }),
     };
+  }
+
+  // Чистый итог раздачи каждого человека: выигрыш минус вложенное в банк. Столы с ботами не считаются —
+  // иначе рейтинг набивали бы на ботах. Сбой рейтинга не должен останавливать игру.
+  recordRating(summary) {
+    const ratings = this.lobby.ratings;
+    if (!ratings || this.settings.bots || !summary.winners.length) return;
+    try {
+      ratings.recordHand(this.handResults());
+    } catch (e) {
+      console.error(`[room ${this.code}] ошибка рейтинга:`, e);
+    }
+  }
+
+  handResults() {
+    return this.game.players
+      .filter((p) => p.human && p.hole.length && this.raters.has(p.id))
+      .map((p) => {
+        const rater = this.raters.get(p.id);
+        const member = this.members.get(p.id);
+        return { rid: rater.rid, nick: member ? member.nick : rater.nick, net: p.won - p.total };
+      });
   }
 
   act(session, action) {
@@ -339,7 +365,8 @@ class Room {
 }
 
 class Lobby {
-  constructor() {
+  constructor(ratings = null) {
+    this.ratings = ratings;
     this.rooms = new Map();
     this.sessions = new Map(); // секретный ключ клиента → сессия
   }
@@ -355,7 +382,7 @@ class Lobby {
   session(key) {
     let s = this.sessions.get(key);
     if (!s) {
-      s = { key, id: newId('p'), nick: 'Игрок', avatar: null, ws: null, roomCode: null, lastSeen: Date.now(), pendingLeft: null };
+      s = { key, rid: ratingId(key), id: newId('p'), nick: 'Игрок', avatar: null, ws: null, roomCode: null, lastSeen: Date.now(), pendingLeft: null };
       this.sessions.set(key, s);
     }
     return s;

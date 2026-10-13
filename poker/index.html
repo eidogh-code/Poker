@@ -35,6 +35,7 @@
         <div class="profile-actions">
           <button class="btn btn-call bonus" id="btn-bonus" type="button"></button>
           <button class="btn btn-ghost" id="btn-look" type="button">Оформление</button>
+          <button class="btn btn-ghost" id="btn-info" type="button" aria-haspopup="dialog">INFO</button>
           <button class="btn btn-ghost" type="button" data-music-toggle aria-pressed="true">Музыка включена</button>
           <button class="btn btn-ghost" id="btn-quit" type="button" hidden>Выйти из игры</button>
         </div>
@@ -124,6 +125,7 @@
       <button class="btn btn-ghost" id="lobby-back" type="button">Назад</button>
       <h2>Игра по сети</h2>
       <span class="net-status" id="net-status" role="status"></span>
+      <button class="btn btn-call" id="btn-rating" type="button" aria-haspopup="dialog">Рейтинг</button>
     </header>
 
     <div class="lobby-server" id="lobby-server" hidden>
@@ -333,6 +335,39 @@
       <div class="swatches" id="look-backs" role="radiogroup" aria-labelledby="look-back-label"></div>
       <div class="sheet-actions">
         <button class="btn btn-raise" value="save" type="submit">Готово</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="sheet" id="dlg-info" aria-labelledby="dlg-info-title">
+    <form method="dialog" class="sheet-body info-body">
+      <h2 id="dlg-info-title">Об игре</h2>
+      <dl class="credits">
+        <div><dt>Разработка</dt><dd>Никита Стеценко</dd></div>
+        <div><dt>Идея</dt><dd>Дмитрий Голышев</dd></div>
+      </dl>
+      <p class="info-text">Данная игра создана исключительно в развлекательных целях. Приятной игры!</p>
+      <div class="sheet-actions">
+        <button class="btn btn-raise" value="close" type="submit">Закрыть</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="sheet rating-sheet" id="dlg-rating" aria-labelledby="dlg-rating-title">
+    <form method="dialog" class="sheet-body">
+      <h2 id="dlg-rating-title">Рейтинг игроков</h2>
+      <p class="field-hint">Чистый выигрыш в сетевых раздачах за столами без ботов, где играли хотя бы двое. Пополнения фишек на выигрыш не влияют.</p>
+      <div class="rating-me" id="rating-me" hidden></div>
+      <p class="field-hint" id="rating-status" role="status"></p>
+      <div class="rating-scroll">
+        <table class="rating-table" id="rating-table" hidden>
+          <thead><tr><th scope="col">#</th><th scope="col">Игрок</th><th scope="col">Выигрыш</th><th scope="col">Раздач</th><th scope="col">Побед</th></tr></thead>
+          <tbody id="rating-rows"></tbody>
+        </table>
+      </div>
+      <div class="sheet-actions">
+        <button class="btn btn-call" id="rating-refresh" type="button">Обновить</button>
+        <button class="btn btn-raise" value="close" type="submit">Закрыть</button>
       </div>
     </form>
   </dialog>

@@ -8,3 +8,10 @@ services:
     plan: free
     healthCheckPath: /health
     autoDeploy: true
+    # Хранилище рейтинга: бесплатная база Upstash Redis (console.upstash.com → Create database → REST API).
+    # Без этих переменных рейтинг пишется в файл, а бесплатный Render стирает диск при каждом засыпании.
+    envVars:
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false

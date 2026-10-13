@@ -11,5 +11,6 @@ COPY poker/js/cards.js poker/js/ai.js poker/js/game.js ./poker/js/
 ENV NODE_ENV=production
 ENV PORT=8787
 EXPOSE 8787
+RUN mkdir -p server/data && chown node:node server/data
 USER node
 CMD ["node", "server/src/index.js"]

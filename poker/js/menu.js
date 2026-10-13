@@ -203,6 +203,7 @@
     $('#btn-bonus').addEventListener('click', claimBonus);
     $('#btn-profile').addEventListener('click', openProfile);
     $('#btn-look').addEventListener('click', () => { renderLook(); $('#dlg-look').showModal(); });
+    $('#btn-info').addEventListener('click', () => $('#dlg-info').showModal());
     $('#pf-photo').addEventListener('change', onPhotoPicked);
     $('#pf-glyphs').addEventListener('change', (e) => {
       const tone = Number(e.target.value);
