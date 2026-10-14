@@ -1,17 +1,18 @@
 // Проверка всего, что приходит от клиентов. Ничему не доверяем: строки чистим, числа сверяем со списками.
 'use strict';
 
+const { P } = require('./engine');
+
 const LIMITS = {
   NICK_MAX: 16,
   ROOM_NAME_MAX: 24,
   CHAT_MAX: 200,
   PHOTO_MAX: 24000, // аватар 160×160 в JPEG — около 10–20 КБ в base64
 };
-const MODES = ['holdem', 'omaha', 'joker', 'short'];
-const BUY_INS = [500, 1000, 2000, 5000];
-const LEVELS = [0, 1, 3];
+const MODES = ['holdem', 'omaha', 'joker', 'short', 'aof', 'aofomaha'];
+const DEFAULT_BUY_IN = 1000; // есть и в лестнице кэша, и в лестнице AoF
 const GLYPHS = ['♠', '♥', '♦', '♣', '★', '♛', '♞', '☘'];
-const ACTIONS = ['fold', 'check', 'call', 'raise'];
+const ACTIONS = ['fold', 'check', 'call', 'raise', 'allin'];
 const PHOTO_RE = /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
 // Сигнатура настоящей картинки в начале base64: JPEG, PNG или WebP.
 const PHOTO_MAGIC = /^data:image\/(?:jpeg;base64,\/9j\/|png;base64,iVBORw0KGgo|webp;base64,UklGR)/;
@@ -51,17 +52,26 @@ function avatar(a) {
   return { kind: 'glyph', glyph: '♠', tone: 0 };
 }
 
+// Взнос — только ступень лестницы движка для этого режима; блайнды из него выводит движок.
+const buyInFor = (mode, v) => (P.stakesFor(mode).includes(v) ? v : DEFAULT_BUY_IN);
+
 function roomSettings(raw, hostNick) {
   const r = raw && typeof raw === 'object' ? raw : {};
+  const mode = MODES.includes(r.mode) ? r.mode : 'holdem';
   return {
     name: roomName(r.name, `Стол ${hostNick}`),
     visibility: r.visibility === 'closed' ? 'closed' : 'open',
-    mode: MODES.includes(r.mode) ? r.mode : 'holdem',
-    buyIn: BUY_INS.includes(r.buyIn) ? r.buyIn : 1000,
-    level: LEVELS.includes(r.level) ? r.level : 1,
-    blindUp: r.blindUp !== false,
+    mode,
+    buyIn: buyInFor(mode, r.buyIn),
     bots: r.bots === true,
   };
+}
+
+// Очередь на турнир: режим и взнос строго из списков, иначе запрос отклоняется (без «умолчаний» — это деньги).
+function tourneyQueue(raw) {
+  const r = raw && typeof raw === 'object' ? raw : {};
+  if (!MODES.includes(r.mode) || !P.TOURNEY.buyIns.includes(r.buyIn)) return null;
+  return { mode: r.mode, buyIn: r.buyIn };
 }
 
 function action(a) {
@@ -75,4 +85,4 @@ function action(a) {
   return out;
 }
 
-module.exports = { LIMITS, MODES, BUY_INS, cleanText, nick, roomName, chat, key, code, avatar, roomSettings, action };
+module.exports = { LIMITS, MODES, cleanText, nick, roomName, chat, key, code, avatar, roomSettings, tourneyQueue, action };

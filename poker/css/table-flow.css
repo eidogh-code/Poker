@@ -1,0 +1,85 @@
+/* Ход раздачи без всплывающих окон: фишки летят к победителю, «несыгранные» карты, кнопка «Дальше»,
+   докупка в панели, смена стола, AoF-панель, меню форматов. Подключается последним — поверх portrait.css. */
+
+/* ---------- меню: кэш-стол или турнир ---------- */
+#setup:not([data-format="tournament"]) .tourney-only,
+#setup[data-format="tournament"] .cash-only { display: none; }
+.table-pick { grid-column: 1 / -1; margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.45; text-wrap: pretty; }
+.mini.aof {
+  display: grid; place-items: center;
+  background: var(--suit-red); color: var(--ivory);
+  font-family: var(--font-display); font-weight: 800; font-size: 12px; letter-spacing: .04em;
+}
+
+/* ---------- фишки к победителю ---------- */
+.chip-layer { position: absolute; inset: 0; pointer-events: none; z-index: 25; }
+.chip.flying { position: absolute; width: 18px; height: 18px; will-change: transform, opacity; }
+
+/* ---------- «несыгранные» карты: рубашкой вверх, касание переворачивает ---------- */
+.peek-card {
+  padding: 0; border: 0; font: inherit; cursor: pointer;
+  box-shadow: 0 0 0 2px rgba(240, 208, 138, .55), 0 6px 14px rgba(0, 0, 0, .4);
+  animation: pop .3s cubic-bezier(.2, .9, .3, 1.2) both;
+}
+.peek-card:hover { translate: 0 -3px; }
+.peek-card:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: 3px; }
+.card.ghost { opacity: .8; filter: saturate(.7); animation: peek-flip .35s ease-out both; }
+@keyframes peek-flip { from { transform: rotateY(90deg); } }
+
+/* ---------- кнопка «Дальше»: над общими картами, на месте банка (он уже разыгран) ---------- */
+.table > .banner {
+  top: 38%; bottom: auto; translate: -50% -100%;
+  padding: 0; border: 0; background: none; box-shadow: none;
+}
+.next-btn { padding: 9px 16px; border-radius: 999px; font-size: 15px; box-shadow: 0 10px 24px rgba(0, 0, 0, .45); }
+
+/* ---------- подсказка поверх стола ---------- */
+.toast {
+  position: absolute; left: 50%; top: 9%; translate: -50% 0; z-index: 35;
+  max-width: min(90%, 460px); padding: 8px 16px; border-radius: 999px;
+  border: 1px solid var(--brass); background: rgba(22, 11, 17, .94);
+  font-size: 14px; font-weight: 700; text-align: center; text-wrap: balance;
+  pointer-events: none; animation: pop .25s both;
+}
+
+/* ---------- смена стола в шапке ---------- */
+.stake-nav { display: inline-flex; gap: 4px; margin-left: 6px; vertical-align: middle; }
+.stake-btn {
+  width: 28px; height: 24px; padding: 0; border-radius: 7px;
+  border: 1px solid var(--line); background: rgba(0, 0, 0, .25); color: var(--brass-hi);
+  font-size: 11px; line-height: 1; cursor: pointer;
+}
+.stake-btn:hover:not(:disabled) { border-color: var(--brass); }
+.stake-btn:disabled { opacity: .3; cursor: not-allowed; }
+.stake-btn:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: 2px; }
+/* Два пальца на сукне — жест смены стола, а не масштаб; панели и журнал масштабируются как обычно. */
+.stage { touch-action: pan-x pan-y; }
+
+/* ---------- AoF: только «Фолд» и «Олл-ин» ---------- */
+.dock.aof #a-raise, .dock.aof .sizer { display: none; }
+
+/* ---------- докупка: в панели действий, стол остаётся виден ---------- */
+.rebuy { grid-column: 2 / 4; display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; }
+.rebuy-acts { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.rebuy-acts .btn { padding: 10px 16px; }
+.dock.broke .acts-wrap, .dock.broke .sizer { display: none; }
+
+@media (orientation: portrait) {
+  /* Старый баннер победителя был панелью во всю ширину — теперь это одна кнопка над панелью действий. */
+  .table > .banner {
+    position: absolute; top: 40%; bottom: auto; width: auto; translate: -50% -100%;
+    flex-direction: row; padding: 0; text-align: center;
+  }
+  .table-screen:has(.dock.away) .table > .banner { bottom: auto; width: auto; }
+  .next-btn { min-height: 44px; }
+  .dock.aof .acts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rebuy { grid-column: 1 / -1; grid-row: 2 / -1; flex-direction: column; align-items: stretch; gap: 10px; padding: 4px 0 2px; text-align: center; }
+  .rebuy-acts { flex-direction: column; }
+  .rebuy-acts .btn { min-height: 48px; font-size: 16px; }
+  .stake-btn { width: 34px; height: 30px; font-size: 12px; }
+  .toast { top: 4%; font-size: 13px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .peek-card, .card.ghost, .toast { animation: none; }
+}

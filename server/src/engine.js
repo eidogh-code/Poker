@@ -23,4 +23,7 @@ function loadEngine() {
   return context.window.Poker;
 }
 
-module.exports = { loadEngine };
+// Один экземпляр движка на процесс: им пользуются и комнаты, и проверка ввода.
+const P = loadEngine();
+
+module.exports = { loadEngine, P };

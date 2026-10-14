@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="css/extras.css">
   <link rel="stylesheet" href="css/online.css">
   <link rel="stylesheet" href="css/portrait.css">
+  <link rel="stylesheet" href="css/table-flow.css">
 </head>
 <body data-felt="oxblood" data-back="lattice" class="splashing">
 
@@ -65,6 +66,16 @@
           <span class="mode-art" aria-hidden="true"><i class="mini six">6</i><i class="mini six">A</i></span>
           <span class="mode-text"><strong>Шорт-дек</strong><span class="d">Колода с шестёрок. Флеш старше фулл-хауса.</span></span>
         </label>
+        <label class="mode">
+          <input type="radio" name="mode" value="aof">
+          <span class="mode-art" aria-hidden="true"><i class="mini aof">ALL</i><i class="mini"></i></span>
+          <span class="mode-text"><strong>AoF Холдем</strong><span class="d">Олл-ин или фолд — других ставок нет.</span></span>
+        </label>
+        <label class="mode">
+          <input type="radio" name="mode" value="aofomaha">
+          <span class="mode-art four" aria-hidden="true"><i class="mini aof">ALL</i><i class="mini"></i><i class="mini"></i><i class="mini"></i></span>
+          <span class="mode-text"><strong>AoF Омаха</strong><span class="d">Четыре карты и флоп, затем олл-ин или фолд.</span></span>
+        </label>
       </fieldset>
 
       <div class="opts">
@@ -78,29 +89,21 @@
             <label><input type="radio" name="opponents" value="5" checked><span>5</span></label>
           </div>
         </div>
-        <div class="opt" role="radiogroup" aria-labelledby="o-stack">
-          <span id="o-stack" class="opt-name">Взнос за стол</span>
+        <div class="opt" role="radiogroup" aria-labelledby="o-format">
+          <span id="o-format" class="opt-name">Формат</span>
           <div class="seg">
-            <label><input type="radio" name="stack" value="500"><span>500</span></label>
-            <label><input type="radio" name="stack" value="1000" checked><span>1 000</span></label>
-            <label><input type="radio" name="stack" value="2000"><span>2 000</span></label>
-            <label><input type="radio" name="stack" value="5000"><span>5 000</span></label>
+            <label><input type="radio" name="format" value="cash" checked><span>Кэш-стол</span></label>
+            <label><input type="radio" name="format" value="tournament"><span>Турнир</span></label>
           </div>
         </div>
-        <div class="opt" role="radiogroup" aria-labelledby="o-blinds">
-          <span id="o-blinds" class="opt-name">Блайнды</span>
-          <div class="seg">
-            <label><input type="radio" name="level" value="0"><span>5 / 10</span></label>
-            <label><input type="radio" name="level" value="1" checked><span>10 / 20</span></label>
-            <label><input type="radio" name="level" value="3"><span>25 / 50</span></label>
-          </div>
+        <div class="opt cash-only">
+          <span class="opt-name">Стол</span>
+          <p class="table-pick" id="table-pick" aria-live="polite"></p>
         </div>
-        <div class="opt" role="radiogroup" aria-labelledby="o-up">
-          <span id="o-up" class="opt-name">Рост блайндов</span>
-          <div class="seg">
-            <label><input type="radio" name="blindUp" value="1" checked><span>Каждые 10 раздач</span></label>
-            <label><input type="radio" name="blindUp" value="0"><span>Без роста</span></label>
-          </div>
+        <div class="opt tourney-only" role="radiogroup" aria-labelledby="o-tbuy">
+          <span id="o-tbuy" class="opt-name">Взнос за турнир</span>
+          <div class="seg" id="tourney-buyins"></div>
+          <p class="table-pick" id="tourney-pick" aria-live="polite"></p>
         </div>
         <div class="opt" role="radiogroup" aria-labelledby="o-speed">
           <span id="o-speed" class="opt-name">Темп соперников</span>
@@ -149,6 +152,24 @@
         <h3 class="lobby-sub">Открытые столы</h3>
         <ul class="room-list" id="room-list" aria-live="polite"></ul>
       </section>
+      <section class="lobby-col tq-col" aria-labelledby="tq-title">
+        <h3 class="lobby-sub" id="tq-title">Турнир</h3>
+        <p class="field-hint tq-rules" id="tq-rules"></p>
+        <div id="tq-setup">
+          <div class="opts create-opts">
+            <div class="opt" role="radiogroup" aria-labelledby="tq-mode-l"><span id="tq-mode-l" class="opt-name">Игра</span>
+              <div class="seg seg-wrap" id="tq-modes"></div></div>
+            <div class="opt" role="radiogroup" aria-labelledby="tq-buy-l"><span id="tq-buy-l" class="opt-name">Взнос</span>
+              <div class="seg seg-wrap" id="tq-buyins"></div></div>
+          </div>
+          <p class="field-hint" id="tq-hint"></p>
+          <button class="btn btn-raise tq-btn" id="tq-join" type="button">Встать в очередь</button>
+        </div>
+        <div class="tq-status" id="tq-status" role="status" hidden>
+          <p class="tq-count"><b id="tq-count"></b><span id="tq-when"></span></p>
+          <button class="btn btn-ghost tq-btn" id="tq-leave" type="button">Выйти из очереди</button>
+        </div>
+      </section>
     </div>
 
     <div class="lobby-body room-layout" id="room-view" hidden>
@@ -184,7 +205,14 @@
       <button id="btn-menu" class="btn btn-ghost" type="button">Меню</button>
       <dl class="meta">
         <div><dt>Игра</dt><dd id="m-mode"></dd></div>
-        <div><dt>Блайнды</dt><dd id="m-blinds"></dd><dd class="sub" id="m-level"></dd></div>
+        <div class="stake-meta"><dt>Блайнды</dt>
+          <dd><span id="m-blinds"></span>
+            <span class="stake-nav" id="stake-nav" hidden>
+              <button class="stake-btn" id="stake-down" type="button" aria-label="Стол с блайндами ниже">▼</button>
+              <button class="stake-btn" id="stake-up" type="button" aria-label="Стол с блайндами выше">▲</button>
+            </span>
+          </dd>
+          <dd class="sub" id="m-level"></dd></div>
         <div><dt>Раздача</dt><dd id="m-hand"></dd></div>
       </dl>
       <div class="tools">
@@ -206,8 +234,11 @@
           <div class="board" id="board" role="group" aria-label="Общие карты"></div>
         </div>
         <div id="seats" role="list" aria-label="Игроки за столом"></div>
-        <!-- Баннер — последним слоем стола, поверх имён и карт игроков. -->
-        <div class="banner" id="banner" role="status" hidden></div>
+        <!-- Слой для фишек, летящих к победителю: поверх мест, не перехватывает касания. -->
+        <div class="chip-layer" id="chip-layer" aria-hidden="true"></div>
+        <!-- Кнопка следующей раздачи — компактно внизу стола, не закрывает вскрытие. -->
+        <div class="banner" id="banner" hidden></div>
+        <div class="toast" id="toast" role="status" hidden></div>
       </div>
       <div class="sr-only" id="announcer" aria-live="polite"></div>
     </main>
@@ -221,11 +252,15 @@
         <p class="sitout-text"><b>Вы отошли от стола.</b> <span id="sitout-left"></span></p>
         <button class="btn btn-raise" id="btn-return" type="button">Вернуться в игру</button>
       </div>
+      <div class="rebuy" id="rebuy" role="alertdialog" aria-labelledby="rebuy-title" aria-describedby="rebuy-text" hidden>
+        <p class="sitout-text"><b id="rebuy-title">Фишки кончились.</b> <span id="rebuy-text"></span></p>
+        <div class="rebuy-acts" id="rebuy-acts"></div>
+      </div>
       <div class="acts-wrap">
         <div class="turn-note" id="turn-note" aria-live="polite"></div>
         <div class="turn-timer" id="turn-timer" hidden><i id="turn-timer-bar"></i></div>
         <div class="acts">
-          <button class="btn btn-fold" id="a-fold" type="button" disabled><span>Пас</span><kbd>F</kbd></button>
+          <button class="btn btn-fold" id="a-fold" type="button" disabled><span id="a-fold-t">Пас</span><kbd>F</kbd></button>
           <button class="btn btn-call" id="a-call" type="button" disabled><span id="a-call-t">Чек</span><kbd>C</kbd></button>
           <button class="btn btn-raise" id="a-raise" type="button" disabled><span id="a-raise-t">Рейз</span><kbd>R</kbd></button>
         </div>
@@ -384,25 +419,16 @@
             <label><input type="radio" name="visibility" value="closed"><span>Только по коду</span></label>
           </div></div>
         <div class="opt" role="radiogroup" aria-labelledby="cr-mode"><span id="cr-mode" class="opt-name">Игра</span>
-          <div class="seg">
+          <div class="seg seg-wrap">
             <label><input type="radio" name="mode" value="holdem" checked><span>Холдем</span></label>
             <label><input type="radio" name="mode" value="omaha"><span>Омаха</span></label>
             <label><input type="radio" name="mode" value="joker"><span>С джокерами</span></label>
             <label><input type="radio" name="mode" value="short"><span>Шорт-дек</span></label>
+            <label><input type="radio" name="mode" value="aof"><span>AoF Холдем</span></label>
+            <label><input type="radio" name="mode" value="aofomaha"><span>AoF Омаха</span></label>
           </div></div>
-        <div class="opt" role="radiogroup" aria-labelledby="cr-buy"><span id="cr-buy" class="opt-name">Взнос</span>
-          <div class="seg">
-            <label><input type="radio" name="buyIn" value="500"><span>500</span></label>
-            <label><input type="radio" name="buyIn" value="1000" checked><span>1 000</span></label>
-            <label><input type="radio" name="buyIn" value="2000"><span>2 000</span></label>
-            <label><input type="radio" name="buyIn" value="5000"><span>5 000</span></label>
-          </div></div>
-        <div class="opt" role="radiogroup" aria-labelledby="cr-lvl"><span id="cr-lvl" class="opt-name">Блайнды</span>
-          <div class="seg">
-            <label><input type="radio" name="level" value="0"><span>5 / 10</span></label>
-            <label><input type="radio" name="level" value="1" checked><span>10 / 20</span></label>
-            <label><input type="radio" name="level" value="3"><span>25 / 50</span></label>
-          </div></div>
+        <div class="opt" role="radiogroup" aria-labelledby="cr-buy"><span id="cr-buy" class="opt-name">Взнос · блайнды</span>
+          <div class="seg seg-wrap" id="cr-buyins"></div></div>
         <div class="opt" role="radiogroup" aria-labelledby="cr-bots"><span id="cr-bots" class="opt-name">Свободные места</span>
           <div class="seg">
             <label><input type="radio" name="bots" value="0" checked><span>Только люди</span></label>

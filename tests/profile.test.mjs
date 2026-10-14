@@ -89,3 +89,13 @@ test('фото-аватар принимается только как data:imag
   const data = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==';
   assert.equal(Profile.normalize({ avatar: { kind: 'photo', data } }).avatar.data, data);
 });
+
+test('турнирный взнос списывается с баланса, не трогая стол; приз зачисляется', () => {
+  const p = { ...Profile.defaults(), balance: 3000, table: 0 };
+  const paid = Profile.payEntry(p, 1000);
+  assert.ok(paid.ok);
+  assert.equal(paid.state.balance, 2000);
+  assert.equal(paid.state.table, 0, 'турнирные фишки — не деньги');
+  assert.equal(Profile.payEntry(p, 5000).ok, false);
+  assert.equal(Profile.award(paid.state, 6000).balance, 8000);
+});

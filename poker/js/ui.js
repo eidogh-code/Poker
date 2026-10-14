@@ -15,15 +15,20 @@
     const s = Math.max(0, Math.ceil(ms / 1000));
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   };
-  const MODE_NAME = { holdem: 'Холдем', omaha: 'Омаха', joker: 'Холдем с джокерами', short: 'Шорт-дек' };
-  const MODE_MARK = { holdem: 'Холдем', omaha: 'Омаха', joker: 'Джокер', short: 'Шорт-дек' };
-  const ODDS_ITERS = { holdem: 700, omaha: 260, joker: 420, short: 700 };
-  const DEFAULTS = { mode: 'holdem', opponents: 5, stack: 1000, level: 1, blindUp: true, speed: 'normal' };
-  const BUY_INS = [500, 1000, 2000, 5000];
+  const MODE_NAME = { holdem: 'Холдем', omaha: 'Омаха', joker: 'Холдем с джокерами', short: 'Шорт-дек', aof: 'AoF Холдем', aofomaha: 'AoF Омаха' };
+  const MODE_MARK = { holdem: 'Холдем', omaha: 'Омаха', joker: 'Джокер', short: 'Шорт-дек', aof: 'All-in or Fold', aofomaha: 'AoF Омаха' };
+  const ODDS_ITERS = { holdem: 700, omaha: 260, joker: 420, short: 700, aof: 700, aofomaha: 260 };
+  const DEFAULTS = { mode: 'holdem', opponents: 5, speed: 'normal', format: 'cash', tbuy: 1000 };
   const SIT_OUT_MS = 3 * 60 * 1000;   // сколько держим место за отошедшим игроком
   const BANKRUPT_MS = 60 * 1000;      // сколько ждём пополнения, когда фишки кончились
-  const AUTO_NEXT_MS = 6 * 1000;      // через сколько начинается следующая раздача
+  const AFTER_HAND_MS = 2500;         // пауза, чтобы досмотреть вскрытие, прежде чем спрашивать о докупке или итогах
+  const PEEK_MS = 5000;               // сколько лежат «несыгранные» карты рубашкой вверх
+  const NEXT_MS = { fold: 3000, showdown: 5000, peek: 6500, peeked: 3500 }; // через сколько следующая раздача
   const TURN_WARN_MS = 10 * 1000;     // когда таймер хода краснеет
+  const TOAST_MS = 2600;
+  const SWIPE_MIN_PX = 60;            // свайп двумя пальцами короче — не жест смены стола
+  const SWIPE_MAX_MS = 1200;
+  const CHIP_FLIGHT = { count: 7, ms: 700, stagger: 55 };
   const TICK_MS = 200;
 
   const store = {
@@ -40,11 +45,22 @@
   let nextTicker = 0;
   let sitOutTicker = 0;
   let bankruptTicker = 0;
+  let bankruptShowTimer = 0;
+  let resultTimer = 0;
+  let switchTimer = 0;
+  let toastTimer = 0;
+  let setup = null;        // настройки офлайн-стола — с ними пересаживаемся за другой стол
+  let peek = null;         // { cards, revealed, timer } — карты, которые легли бы на стол
+  let handOver = false;    // раздача закончилась, следующая ещё не началась
+  let pendingStake = 0;    // стол, за который пересядем после текущей раздачи
+  let switchTarget = 0;    // раздача кончилась, пересадка на этот стол уже запланирована
+  let lastSwitchAt = 0;    // защита от двойного нажатия и зажатой клавиши
+  let tourneyOver = false; // итог турнира уже решён — «Меню» больше не спрашивает о выходе
 
   /* ---------- карты ---------- */
 
   function cardHTML(c, o) {
-    const fresh = o && o.fresh ? ' fresh' : '';
+    const fresh = (o && o.fresh ? ' fresh' : '') + (o && o.ghost ? ' ghost' : '');
     if (o && o.hidden) return `<div class="card back${fresh}" role="img" aria-label="Закрытая карта"></div>`;
     if (c.j) return `<div class="card joker${fresh}" role="img" aria-label="Джокер"><span class="jt" aria-hidden="true">JOKER</span><span class="jk" aria-hidden="true">★</span></div>`;
     const red = c.s === 1 || c.s === 2 ? ' red' : '';
@@ -108,7 +124,13 @@
     $('#seats').innerHTML = g.players.map((p, i) => seatHTML(p, i, n)).join('');
 
     let board = g.board.map((c) => cardHTML(c, { fresh: isFresh(c) })).join('');
-    for (let k = g.board.length; k < 5; k++) board += '<div class="slot"></div>';
+    const rest = peek ? peek.cards : [];
+    for (let k = g.board.length; k < 5; k++) {
+      const c = rest[k - g.board.length];
+      if (!c) board += '<div class="slot"></div>';
+      else if (peek.revealed) board += cardHTML(c, { ghost: true });
+      else board += '<button class="card back peek-card" type="button" data-peek aria-label="Показать, какие карты легли бы на стол"></button>';
+    }
     $('#board').innerHTML = board;
 
     const potAll = g.pot + g.players.reduce((s, p) => s + p.bet, 0);
@@ -120,9 +142,14 @@
     $('#m-hand').textContent = String(g.handNo);
     const left = g.handsLeftAtLevel();
     const level = $('#m-level');
-    level.textContent = left === null ? 'без роста'
-      : left === 1 ? 'растут после этой раздачи' : `рост через ${left} ${plural(left, ['раздачу', 'раздачи', 'раздач'])}`;
+    if (!g.tournament) level.textContent = `стол ${fmt(g.cfg.stack)}${pendingStake ? ` → ${fmt(pendingStake)}` : ''}`;
+    else if (left === null) level.textContent = 'последний уровень';
+    else level.textContent = left === 1 ? 'растут после этой раздачи' : `рост через ${left} ${plural(left, ['раздачу', 'раздачи', 'раздач'])}`;
     level.classList.toggle('soon', left !== null && left <= 2);
+    renderStakeNav();
+    // AoF: в панели только «Фолд» и «Олл-ин» — и в свой ход, и в ожидании.
+    $('#dock').classList.toggle('aof', Boolean(g.aof));
+    if (!limits) $('#a-fold-t').textContent = g.aof ? 'Фолд' : 'Пас';
     // Ход мог закончиться без нажатия кнопки (авто-чек или авто-пас по таймеру) — гасим панель.
     if (limits && g.toAct !== 0) setDockActive(false);
     renderMine();
@@ -137,7 +164,7 @@
     else if (me.sittingOut) text = 'Вы отошли';
     else if (me.out) text = 'Ждём раздачу';
     else if (!me.hole.length) text = 'Раздаём карты';
-    else if (game.mode === 'omaha' && game.board.length < 3) text = 'Ждём флоп';
+    else if (game.holeN === 4 && game.board.length < 3) text = 'Ждём флоп';
     else text = P.Cards.handName(P.Cards.bestScore(game.mode, me.hole, game.board), game.mode);
     $('#mine-hand').textContent = text;
   }
@@ -194,9 +221,19 @@
     setDockActive(true);
     P.Sound.play('turn');
 
+    // AoF: две кнопки — «Фолд» и «Олл-ин»; ползунка и рейзов нет.
+    const aof = Boolean(L.aof);
+    $('#dock').classList.toggle('aof', aof);
+    $('#a-fold-t').textContent = aof ? 'Фолд' : 'Пас';
     let callText = 'Чек';
-    if (L.toCallFull > 0) callText = L.toCallFull >= me.chips ? `Ва-банк ${fmt(me.chips)}` : `Колл ${fmt(L.toCallFull)}`;
+    if (aof && L.canRaise) callText = `Олл-ин ${fmt(L.stackTo)}`;
+    else if (L.toCallFull > 0) callText = L.toCallFull >= me.chips ? `${aof ? 'Олл-ин' : 'Ва-банк'} ${fmt(me.chips)}` : `Колл ${fmt(L.toCallFull)}`;
     $('#a-call-t').textContent = callText;
+    if (aof) {
+      startTurnTimer(deadline);
+      computeOdds();
+      return;
+    }
 
     const canRaise = L.canRaise;
     $('#a-raise').disabled = !canRaise;
@@ -241,12 +278,15 @@
   // Пас доступен всегда, даже когда можно бесплатно чекнуть: так быстрее выйти из раздачи.
   function act(type) {
     if (!limits) return;
-    const action = { type };
-    if (type === 'raise') {
+    let action = { type };
+    if (limits.aof) {
+      // AoF: «играю» — это всегда весь стек; сервер и движок принимают обычные рейз и колл.
+      if (type !== 'fold') action = limits.canRaise ? { type: 'raise', to: limits.stackTo } : { type: limits.toCallFull > 0 ? 'call' : 'check' };
+    } else if (type === 'raise') {
       if (!limits.canRaise) return;
       action.to = Number($('#a-range').value);
     }
-    if (type === 'call' && limits.toCallFull === 0) action.type = 'check';
+    if (action.type === 'call' && limits.toCallFull === 0) action.type = 'check';
     setDockActive(false);
     game.humanAct(action, game.me.id);
   }
@@ -266,32 +306,108 @@
     }, 30);
   }
 
-  /* ---------- конец раздачи: баннер и автопродолжение ---------- */
+  /* ---------- конец раздачи: фишки к победителю, «несыгранные» карты, автопродолжение ---------- */
 
+  // Кто выиграл и почему, видно на самом столе: открытые карты, комбинация на месте игрока
+  // и фишки, которые летят из центра к победителю. Отдельного сообщения нет.
   function onHandEnd(summary) {
     setDockActive(false);
-    const lines = summary.winners.map((w) => {
-      const who = w.human ? 'Вы выигрываете' : `${esc(w.name)} выигрывает`;
-      const hand = summary.type === 'showdown' ? `<span class="b-hand">${esc(w.handName || '')}</span>` : '';
-      return `<div class="${w.human ? 'me' : ''}"><b>${who} ${fmt(w.won)}</b>${hand}</div>`;
-    }).join('');
-    const banner = $('#banner');
-    banner.innerHTML = `<div class="lines">${lines}</div>
-      <button class="btn btn-raise" id="btn-next" type="button"><span id="btn-next-t">Следующая раздача</span> <kbd>Пробел</kbd></button>`;
-    banner.hidden = false;
-    $('#btn-next').addEventListener('click', nextHand);
-    startAutoNext();
+    handOver = true;
+    flyChips(summary.winners);
+    const rest = summary.type === 'fold' && summary.rest && summary.rest.length ? summary.rest : null;
+    if (rest) showPeek(rest);
+    // В сети следующую раздачу начинает сервер; офлайн — мы, с кнопкой «Дальше» на случай, если ждать не хочется.
+    if (!game.network) showNext(rest ? NEXT_MS.peek : NEXT_MS[summary.type] || NEXT_MS.fold);
+    if (pendingStake) {
+      switchTarget = pendingStake;
+      pendingStake = 0;
+      clearTimeout(switchTimer);
+      switchTimer = setTimeout(() => doSwitch(switchTarget), AFTER_HAND_MS);
+    }
+  }
+
+  const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Фишки летят из центра стола к табличке победителя; при дележе банка — к каждому.
+  // Полёт показывает, кто забрал банк, поэтому он есть всегда; с «уменьшением движения» в системе — короче и скромнее.
+  function flyChips(winners) {
+    const layer = $('#chip-layer');
+    if (!game || typeof layer.animate !== 'function') return;
+    const calm = reducedMotion();
+    const count = calm ? 3 : CHIP_FLIGHT.count;
+    const base = layer.getBoundingClientRect();
+    const center = $('#board').getBoundingClientRect();
+    const fx = center.left + center.width / 2 - base.left;
+    const fy = center.top + center.height / 2 - base.top;
+    const seats = document.querySelectorAll('#seats .seat');
+    const jitter = () => (Math.random() - 0.5) * 22;
+    winners.forEach((w, wi) => {
+      const seat = seats[game.players.findIndex((p) => p.id === w.id)];
+      const plate = seat && seat.querySelector('.plate');
+      if (!plate) return;
+      const r = plate.getBoundingClientRect();
+      const dx = r.left + r.width / 2 - base.left - fx;
+      const dy = r.top + r.height / 2 - base.top - fy;
+      for (let k = 0; k < count; k++) {
+        const chip = document.createElement('i');
+        chip.className = 'chip flying';
+        chip.style.left = `${fx}px`;
+        chip.style.top = `${fy}px`;
+        layer.appendChild(chip);
+        const sx = jitter();
+        const sy = jitter();
+        const anim = chip.animate([
+          { transform: `translate(-50%, -50%) translate(${sx}px, ${sy}px) scale(1)`, opacity: 0 },
+          { transform: `translate(-50%, -50%) translate(${sx}px, ${sy}px) scale(1)`, opacity: 1, offset: 0.12 },
+          { transform: `translate(-50%, -50%) translate(${dx + jitter() / 2}px, ${dy + jitter() / 2}px) scale(.9)`, opacity: 1, offset: 0.88 },
+          { transform: `translate(-50%, -50%) translate(${dx}px, ${dy}px) scale(.55)`, opacity: 0 },
+        ], { duration: CHIP_FLIGHT.ms, delay: wi * 180 + k * CHIP_FLIGHT.stagger, easing: 'cubic-bezier(.35,.75,.35,1)', fill: 'both' });
+        const done = () => chip.remove();
+        anim.onfinish = done;
+        anim.oncancel = done;
+      }
+    });
+  }
+
+  // Все сбросили до вскрытия: несыгранные карты лежат рубашкой вверх, касание переворачивает их.
+  function showPeek(cards) {
+    clearPeek();
+    peek = { cards, revealed: false, timer: setTimeout(() => { peek = null; render(); }, PEEK_MS) };
+    render();
+  }
+
+  function revealPeek() {
+    if (!peek || peek.revealed) return;
+    clearTimeout(peek.timer);
+    peek.revealed = true; // перевёрнутые карты остаются до следующей раздачи
+    render();
+    P.Sound.play('card');
+    // Дать рассмотреть: следующая раздача не раньше чем через пару секунд.
+    if (!game.network && !$('#banner').hidden && nextDeadline - Date.now() < NEXT_MS.peeked) showNext(NEXT_MS.peeked);
+  }
+
+  function clearPeek() {
+    if (peek) clearTimeout(peek.timer);
+    peek = null;
   }
 
   // Следующая раздача начинается сама — стол не ждёт, если игрок отвлёкся.
-  function startAutoNext() {
+  let nextDeadline = 0;
+
+  function showNext(ms) {
+    const banner = $('#banner');
+    if (banner.hidden) {
+      banner.innerHTML = '<button class="btn btn-raise next-btn" id="btn-next" type="button"><span id="btn-next-t">Дальше</span> <kbd>Пробел</kbd></button>';
+      $('#btn-next').addEventListener('click', nextHand);
+      banner.hidden = false;
+    }
     clearInterval(nextTicker);
-    const deadline = Date.now() + AUTO_NEXT_MS;
+    nextDeadline = Date.now() + ms;
     const tick = () => {
-      const left = deadline - Date.now();
+      const left = nextDeadline - Date.now();
       if (left <= 0) { nextHand(); return; }
       const label = $('#btn-next-t');
-      if (label) label.textContent = `Следующая раздача (${Math.ceil(left / 1000)})`;
+      if (label) label.textContent = `Дальше · ${Math.ceil(left / 1000)}`;
     };
     tick();
     nextTicker = setInterval(tick, TICK_MS);
@@ -300,6 +416,13 @@
   function nextHand() {
     clearInterval(nextTicker);
     $('#banner').hidden = true;
+    // Пересадка уже назначена — пересаживаемся сразу, а не после блайндов новой раздачи.
+    if (switchTarget) {
+      const target = switchTarget;
+      switchTarget = 0;
+      clearTimeout(switchTimer);
+      if (doSwitch(target)) return;
+    }
     if (game) game.nextHand();
   }
 
@@ -309,8 +432,15 @@
 
   // remainingMs — от сервера (в сети), иначе своё время.
   function onSitOut(remainingMs) {
-    sitOutDeadline = Date.now() + (remainingMs > 0 ? remainingMs : SIT_OUT_MS);
     clearInterval(sitOutTicker);
+    // В турнире место не теряется: раздачи идут, карты сбрасываются сами, блайнды списываются.
+    if (game && game.tournament) {
+      $('#sitout-left').textContent = 'Карты сбрасываются автоматически, блайнды списываются.';
+      renderSitOut();
+      P.Sound.play('fold');
+      return;
+    }
+    sitOutDeadline = Date.now() + (remainingMs > 0 ? remainingMs : SIT_OUT_MS);
     const tick = () => {
       const left = sitOutDeadline - Date.now();
       if (left <= 0) { leaveTable('afk'); return; }
@@ -335,62 +465,121 @@
     renderSitOut();
   }
 
-  /* ---------- банкротство: минута на пополнение ---------- */
+  /* ---------- банкротство: минута на докупку ---------- */
 
-  // Сумма пополнения: выбранный взнос, а если на него не хватает — самый крупный доступный.
-  function rebuyAmount(balance) {
-    const wanted = game ? game.cfg.stack : BUY_INS[0];
-    if (balance >= wanted) return wanted;
-    if (game && game.network) return 0; // в сети пополнение — ровно на взнос стола
-    const fits = BUY_INS.filter((v) => v <= balance);
-    return fits.length ? fits[fits.length - 1] : 0;
+  // Докупка — ровно на взнос этого стола (100 больших блайндов), не больше и не меньше.
+  // Не хватает — офлайн можно пересесть за стол дешевле.
+  function rebuyOptions(profile) {
+    const stake = game.cfg.stack;
+    const bonus = P.Profile.bonusAvailable(profile, new Date());
+    const lower = game.network ? 0 : P.pickStake(game.mode, profile.balance);
+    return {
+      stake,
+      canRebuy: profile.balance >= stake,
+      bonusRebuy: bonus && profile.balance + P.Profile.DAILY_BONUS >= stake,
+      lower: lower && lower < stake ? lower : 0,
+    };
   }
 
-  // Один диалог на одно банкротство: повторный вызов (после переподключения) возвращает тот же ответ.
+  // Одна панель на одно банкротство: повторный вызов (после переподключения) возвращает тот же ответ.
   // В сети деньги списывает лобби, когда сервер подтвердит пополнение.
   let bankruptPromise = null;
 
   function onBankrupt(remainingMs) {
     if (bankruptPromise) return bankruptPromise;
-    clearInterval(nextTicker); // пока решается вопрос с пополнением, раздача не начинается
+    clearInterval(nextTicker); // пока решается вопрос с докупкой, раздача не начинается
+    $('#banner').hidden = true;
     bankruptPromise = new Promise((resolve) => {
       const deadline = Date.now() + (remainingMs > 0 ? remainingMs : BANKRUPT_MS);
       let settled = false;
-      const finish = (amount) => {
+      const finish = (amount, after) => {
         if (settled) return;
         settled = true;
         clearInterval(bankruptTicker);
+        clearTimeout(bankruptShowTimer);
+        hideRebuy();
         bankruptPromise = null;
         resolve(amount);
-        if (!amount) leaveTable('bankrupt');
+        if (after) after();
+        else if (!amount) leaveTable('bankrupt');
       };
       const rebuy = () => {
-        const amount = rebuyAmount(P.Profile.get().balance);
-        if (!amount) return;
-        if (!(game && game.network)) P.Profile.update((p) => P.Profile.buyIn(p, amount).state);
-        finish(amount);
+        const { stake, canRebuy } = rebuyOptions(P.Profile.get());
+        if (!canRebuy) return;
+        if (!game.network) P.Profile.update((p) => P.Profile.buyIn(p, stake).state);
+        finish(stake);
       };
-      const claimAndRebuy = () => { P.Menu.claimBonus(); rebuy(); };
-      const show = () => {
+      const tick = () => {
         const left = deadline - Date.now();
-        if (left <= 0) { closeModal(false); finish(0); return; }
-        const profile = P.Profile.get();
-        const amount = rebuyAmount(profile.balance);
-        const bonus = P.Profile.bonusAvailable(profile, new Date());
-        let primary = { label: 'Выйти из-за стола', run: () => finish(0) };
-        if (amount) primary = { label: `Пополнить на ${fmt(amount)}`, run: rebuy };
-        else if (bonus) primary = { label: `Забрать бонус ${fmt(P.Profile.DAILY_BONUS)} и пополнить`, run: claimAndRebuy };
-        const secondary = amount || bonus ? { label: 'Выйти из-за стола', run: () => finish(0) } : null;
-        const text = `Фишки на столе кончились. На балансе ${fmt(profile.balance)}. `
-          + `Через ${clock(left)} вы выйдете из-за стола.`;
-        if (modalState && modalState.kind === 'bankrupt') { $('#modal-text').textContent = text; return; }
-        openModal({ kind: 'bankrupt', title: 'Пополнить стек?', text, primary, secondary });
+        if (left <= 0) { finish(0); return; }
+        $('#rebuy-text').textContent = `На балансе ${fmt(P.Profile.get().balance)}. Через ${clock(left)} вы выйдете из-за стола.`;
       };
-      show();
+      const show = () => {
+        const profile = P.Profile.get();
+        const o = rebuyOptions(profile);
+        const acts = [];
+        if (o.canRebuy) acts.push({ label: `Докупить ${fmt(o.stake)}`, cls: 'btn-raise', run: rebuy });
+        else if (o.bonusRebuy) acts.push({ label: `Бонус +${fmt(P.Profile.DAILY_BONUS)} и докупить`, cls: 'btn-raise', run: () => { P.Menu.claimBonus(); rebuy(); } });
+        if (o.lower) {
+          const [sb, bb] = P.blindsFor(o.lower);
+          acts.push({ label: `Стол ${fmt(sb)}/${fmt(bb)} · ${fmt(o.lower)}`, cls: 'btn-call', run: () => finish(0, () => doSwitch(o.lower)) });
+        }
+        acts.push({ label: 'Выйти', cls: 'btn-ghost', run: () => finish(0) });
+        showRebuy(acts);
+        tick();
+        bankruptTicker = setInterval(tick, 500);
+      };
+      // Сначала даём досмотреть вскрытие и полёт фишек — кто выиграл и чем, — потом спрашиваем.
       clearInterval(bankruptTicker);
-      bankruptTicker = setInterval(show, 500);
+      clearTimeout(bankruptShowTimer);
+      bankruptShowTimer = setTimeout(show, AFTER_HAND_MS);
     });
     return bankruptPromise;
+  }
+
+  function showRebuy(acts) {
+    const box = $('#rebuy-acts');
+    box.replaceChildren(...acts.map((a) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `btn ${a.cls}`;
+      b.textContent = a.label;
+      b.addEventListener('click', a.run);
+      return b;
+    }));
+    $('#rebuy').hidden = false;
+    $('#dock').classList.add('broke');
+    box.firstChild.focus();
+  }
+
+  function hideRebuy() {
+    $('#rebuy').hidden = true;
+    $('#dock').classList.remove('broke');
+  }
+
+  /* ---------- турнир: итог ---------- */
+
+  // Место в турнире показываем, когда досмотрели последнюю раздачу. onClose — «Готово».
+  function onTournamentResult({ place, prize, players, buyIn }, onClose) {
+    tourneyOver = true;
+    clearTimeout(resultTimer);
+    clearInterval(nextTicker);
+    $('#banner').hidden = true;
+    resultTimer = setTimeout(() => {
+      const win = place === 1;
+      const rivals = players - 1;
+      const beaten = rivals === 1 ? 'Вы обыграли соперника' : `Вы обыграли всех ${rivals} соперников`;
+      const text = win
+        ? `${beaten}. Призовой фонд ${fmt(prize)} — на вашем балансе.`
+        : `Вы выбыли на ${place}-м месте из ${players}. Взнос ${fmt(buyIn)} остался в призовом фонде.`;
+      openModal({
+        kind: 'result',
+        title: win ? 'Победа в турнире!' : `${place}-е место`,
+        text,
+        primary: { label: game && game.network ? 'В лобби' : 'В меню', run: onClose },
+      });
+      if (win) P.Sound.play('win');
+    }, AFTER_HAND_MS);
   }
 
   /* ---------- диалог ---------- */
@@ -423,17 +612,21 @@
   function onError(err) {
     openModal({
       title: 'Игра остановилась',
-      text: `Внутренняя ошибка: ${err && err.message ? err.message : err}. Фишки со стола вернутся на баланс.`,
+      text: `Внутренняя ошибка: ${err && err.message ? err.message : err}. `
+        + (game && game.tournament ? 'Турнир прерван.' : 'Фишки со стола вернутся на баланс.'),
       primary: { label: 'В меню', run: () => leaveTable('error') },
     });
   }
 
   function confirmLeave() {
     if (!game) { toMenu(); return; }
+    if (tourneyOver) return; // итог турнира уже на подходе или на экране — выход из него через «Готово»
     const chips = game.me ? game.me.chips : 0;
     openModal({
-      title: 'Выйти из-за стола?',
-      text: `${fmt(chips)} ${plural(chips, ['фишка вернётся', 'фишки вернутся', 'фишек вернутся'])} на баланс. Ставки текущей раздачи пропадут.`,
+      title: game.tournament ? 'Выйти из турнира?' : 'Выйти из-за стола?',
+      text: game.tournament
+        ? 'Вы выбудете из турнира. Взнос не возвращается — он остаётся в призовом фонде.'
+        : `${fmt(chips)} ${plural(chips, ['фишка вернётся', 'фишки вернутся', 'фишек вернутся'])} на баланс. Ставки текущей раздачи пропадут.`,
       primary: { label: 'Остаться', run: () => {} },
       secondary: { label: 'Выйти в меню', run: () => leaveTable('self') },
       dismissable: true,
@@ -479,57 +672,78 @@
     return {
       mode: fd.get('mode'),
       opponents: Number(fd.get('opponents')),
-      stack: Number(fd.get('stack')),
-      level: Number(fd.get('level')),
-      blindUp: fd.get('blindUp') === '1',
       speed: fd.get('speed'),
+      format: fd.get('format') === 'tournament' ? 'tournament' : 'cash',
+      tbuy: Number(fd.get('tbuy')) || P.TOURNEY.buyIns[0],
     };
   }
 
   function applySetup(form, cfg) {
     Object.keys(cfg).forEach((k) => {
-      const val = k === 'blindUp' ? (cfg[k] ? '1' : '0') : String(cfg[k]);
-      const el = form.querySelector(`input[name="${k}"][value="${val}"]`);
+      const el = form.querySelector(`input[name="${k}"][value="${String(cfg[k])}"]`);
       if (el) el.checked = true;
     });
   }
 
+  function noMoneyNote(min) {
+    const bonus = P.Profile.bonusAvailable(P.Profile.get(), new Date());
+    P.Menu.showNote(bonus
+      ? `На балансе меньше ${fmt(min)}. Заберите ежедневный бонус, чтобы сесть за стол.`
+      : `На балансе меньше ${fmt(min)}. Новый бонус будет завтра.`);
+  }
+
+  // Кэш: садимся за самый дорогой стол по балансу, со 100 большими блайндами.
+  // Турнир: взнос уходит в призовой фонд, у всех одинаковый турнирный стек.
   function trySit(cfg) {
-    if (!cfg.stack) {
-      const bonus = P.Profile.bonusAvailable(P.Profile.get(), new Date());
-      P.Menu.showNote(bonus
-        ? `На балансе меньше ${fmt(BUY_INS[0])}. Заберите ежедневный бонус, чтобы сесть за стол.`
-        : `На балансе меньше ${fmt(BUY_INS[0])}. Новый бонус будет завтра.`);
+    const profile = P.Profile.get();
+    if (cfg.format === 'tournament') {
+      const paid = P.Profile.payEntry(profile, cfg.tbuy);
+      if (!paid.ok) { noMoneyNote(cfg.tbuy); return; }
+      P.Profile.update(() => paid.state);
+      P.Menu.showNote('');
+      startGame({ ...cfg, buyIn: cfg.tbuy });
       return;
     }
-    const seat = P.Profile.buyIn(P.Profile.get(), cfg.stack);
-    if (!seat.ok) { P.Menu.showNote('На такой взнос не хватает фишек. Выберите сумму поменьше.'); return; }
+    const stake = P.pickStake(cfg.mode, profile.balance);
+    if (!stake) { noMoneyNote(P.stakesFor(cfg.mode)[0]); return; }
+    const seat = P.Profile.buyIn(profile, stake);
+    if (!seat.ok) { noMoneyNote(stake); return; }
     P.Profile.update(() => seat.state);
     P.Menu.showNote('');
-    startGame(cfg);
+    startGame({ ...cfg, stack: stake });
   }
 
   function startGame(cfg) {
     if (game) game.stop();
-    store.set('poker.setup', cfg);
+    store.set('poker.setup', { mode: cfg.mode, opponents: cfg.opponents, speed: cfg.speed, format: cfg.format, tbuy: cfg.tbuy });
+    setup = cfg;
+    const tournament = cfg.format === 'tournament';
+    const players = cfg.opponents + 1;
     const profile = P.Profile.get();
+    resetTableUi();
     $('#menu').hidden = true;
     $('#table-screen').hidden = false;
-    closeModal(false);
-    toggleDrawer(null);
-    $('#banner').hidden = true;
-    $('#log-list').innerHTML = '';
-    $('#felt-mark').textContent = MODE_MARK[cfg.mode];
+    $('#felt-mark').textContent = tournament ? `Турнир · фонд ${fmt(cfg.buyIn * players)}` : MODE_MARK[cfg.mode];
     document.body.dataset.mode = cfg.mode;
-    setDockActive(false);
     game = new P.Game({ ...cfg, nick: profile.nick, avatar: profile.avatar }, {
       onChange: render,
       onNewHand,
       onHumanTurn: (p, L, deadline) => onHumanTurn(L, deadline),
       onHandEnd,
-      onHandSettled: (p, chips) => P.Profile.update((pr) => P.Profile.setTableChips(pr, chips)),
+      // Турнирные фишки — не деньги: на баланс их не записываем.
+      onHandSettled: (p, chips) => { if (!tournament) P.Profile.update((pr) => P.Profile.setTableChips(pr, chips)); },
       onBankrupt: () => onBankrupt(),
       onSitOut: () => onSitOut(),
+      onEliminated: (p, place) => {
+        if (!p.human) return;
+        onTournamentResult({ place, prize: 0, players, buyIn: cfg.buyIn }, () => finishTournament(place, 0));
+      },
+      onTournamentEnd: (r) => {
+        if (!r.winner || !r.winner.human) return;
+        const prize = cfg.buyIn * players;
+        P.Profile.update((p) => P.Profile.award(p, prize)); // сразу: приз не пропадёт, даже если закрыть приложение
+        onTournamentResult({ place: 1, prize, players, buyIn: cfg.buyIn }, () => finishTournament(1, prize));
+      },
       onError,
       onLog,
       sound: P.Sound.play,
@@ -537,26 +751,143 @@
     game.start();
   }
 
+  function finishTournament(place, prize) {
+    toMenu();
+    P.Menu.showNote(place === 1 ? `Победа в турнире! +${fmt(prize)} на балансе.` : `Турнир окончен: ${place}-е место.`);
+  }
+
+  // Общий сброс экрана стола — при посадке за новый стол, офлайн или в сети.
+  function resetTableUi() {
+    [nextTicker, sitOutTicker, bankruptTicker].forEach(clearInterval);
+    [bankruptShowTimer, resultTimer, switchTimer].forEach(clearTimeout);
+    bankruptPromise = null;
+    pendingStake = 0;
+    switchTarget = 0;
+    tourneyOver = false;
+    handOver = false;
+    clearPeek();
+    closeModal(false);
+    toggleDrawer(null);
+    hideRebuy();
+    $('#banner').hidden = true;
+    $('#sitout').hidden = true;
+    $('#chip-layer').replaceChildren();
+    $('#log-list').innerHTML = '';
+    setDockActive(false);
+  }
+
   function onNewHand() {
     seen = new Set();
+    handOver = false;
+    clearTimeout(switchTimer);
+    switchTarget = 0;
+    clearPeek();
+    // Анимация во вкладке, свёрнутой посреди полёта, может не доиграть — фишки прошлой раздачи убираем.
+    $('#chip-layer').replaceChildren();
     clearInterval(nextTicker);
     $('#banner').hidden = true;
+  }
+
+  /* ---------- смена стола: свайп двумя пальцами, ▲▼ в шапке, PageUp/PageDown ---------- */
+
+  // Лестница столов для текущей игры; null — менять стол нельзя (сеть, турнир).
+  function stakeInfo() {
+    if (!game || game.network || game.tournament || !setup) return null;
+    const ladder = P.stakesFor(game.mode);
+    const i = ladder.indexOf(game.cfg.stack);
+    const money = P.Profile.get().balance + (game.me ? game.me.chips : 0);
+    return { ladder, i, money, up: ladder[i + 1] || 0, down: i > 0 ? ladder[i - 1] : 0 };
+  }
+
+  function renderStakeNav() {
+    const s = stakeInfo();
+    $('#stake-nav').hidden = !s;
+    if (!s) return;
+    $('#stake-up').disabled = !s.up || s.up > s.money;
+    $('#stake-down').disabled = !s.down || s.down > s.money;
+  }
+
+  const stakeLabel = (stake) => { const [sb, bb] = P.blindsFor(stake); return `${fmt(sb)}/${fmt(bb)}`; };
+
+  const SWITCH_COOLDOWN_MS = 900;
+
+  function switchStake(dir) {
+    if (!game) return;
+    // Двойной тап по ▲ или зажатая клавиша не должны проскакивать несколько столов подряд.
+    if (Date.now() - lastSwitchAt < SWITCH_COOLDOWN_MS) return;
+    if (game.network) { toast('В сетевой игре стол выбирается в лобби'); return; }
+    if (game.tournament) { toast('В турнире стол не меняется'); return; }
+    const s = stakeInfo();
+    if (!s) return;
+    const target = dir > 0 ? s.up : s.down;
+    if (!target) { toast(dir > 0 ? 'Это самый дорогой стол' : 'Это самый дешёвый стол'); return; }
+    if (target > s.money) { toast(`За стол ${stakeLabel(target)} садятся с ${fmt(target)}, у вас ${fmt(s.money)}`); return; }
+    // В раздаче (и пока раздают карты — блайнд уже на столе) пересаживаемся только после неё.
+    lastSwitchAt = Date.now();
+    const me = game.me;
+    if (me && !handOver && game.handNo > 0 && !me.folded && !me.out) {
+      pendingStake = target;
+      toast(`Пересядете за стол ${stakeLabel(target)} после этой раздачи`);
+      render();
+      return;
+    }
+    doSwitch(target);
+  }
+
+  // Пересадка: фишки со стола — на баланс, со стола нового уровня садимся со 100 большими блайндами.
+  // true — пересели; false — остались за прежним столом.
+  function doSwitch(target) {
+    if (!game || game.network || !setup) return false;
+    const chips = game.me ? game.me.chips : 0;
+    if (P.Profile.get().balance + chips < target) { toast('Не хватает денег на этот стол'); return false; }
+    P.Profile.update((p) => P.Profile.cashOut(p, chips));
+    P.Profile.update((p) => P.Profile.buyIn(p, target).state);
+    startGame({ ...setup, stack: target });
+    toast(`Новый стол: блайнды ${stakeLabel(target)}, с собой ${fmt(target)}`);
+    return true;
+  }
+
+  function toast(text) {
+    const el = $('#toast');
+    el.textContent = text;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.hidden = true; }, TOAST_MS);
+  }
+
+  // Свайп двумя пальцами: вверх — стол дороже, вниз — дешевле.
+  function initSwipe() {
+    const area = $('#table-screen');
+    const avgY = (touches) => (touches[0].clientY + touches[1].clientY) / 2;
+    let gesture = null;
+    area.addEventListener('touchstart', (e) => {
+      const skip = e.target.closest && e.target.closest('.drawer, input, .modal');
+      gesture = e.touches.length === 2 && !skip ? { y0: avgY(e.touches), y: avgY(e.touches), t0: Date.now() } : null;
+    }, { passive: true });
+    area.addEventListener('touchmove', (e) => {
+      if (gesture && e.touches.length === 2) gesture.y = avgY(e.touches);
+    }, { passive: true });
+    area.addEventListener('touchend', () => {
+      if (!gesture) return;
+      const dy = gesture.y - gesture.y0;
+      const quick = Date.now() - gesture.t0 <= SWIPE_MAX_MS;
+      gesture = null; // второй отпущенный палец — уже не жест
+      if (quick && Math.abs(dy) >= SWIPE_MIN_PX) switchStake(dy < 0 ? 1 : -1);
+    });
+    area.addEventListener('touchcancel', () => { gesture = null; });
   }
 
   // Сетевая игра подключается к тем же экранам: RemoteGame ведёт себя как Game, а сервер вызывает эти функции.
   function attachSession(session, cfg) {
     if (game) game.stop();
+    setup = null;
+    resetTableUi();
     $('#menu').hidden = true;
     $('#lobby').hidden = true;
     $('#table-screen').hidden = false;
-    closeModal(false);
-    toggleDrawer(null);
-    $('#banner').hidden = true;
-    $('#log-list').innerHTML = '';
     $('#felt-mark').textContent = MODE_MARK[cfg.mode];
     document.body.dataset.mode = cfg.mode;
     document.body.classList.toggle('online', Boolean(session.network));
-    setDockActive(false);
     game = session;
     render();
   }
@@ -572,6 +903,12 @@
   function leaveTable(reason) {
     // В сети уходим через сервер: он пришлёт «left» с фишками, лобби вернёт их на баланс.
     if (game && game.network) { game.leave(); return; }
+    // Из турнира уходят без денег: взнос остаётся в призовом фонде, турнирные фишки не деньги.
+    if (game && game.tournament) {
+      toMenu();
+      P.Menu.showNote('Вы покинули турнир — взнос остался в призовом фонде.');
+      return;
+    }
     const chips = game && game.me ? game.me.chips : 0;
     P.Profile.update((p) => P.Profile.cashOut(p, chips));
     toMenu();
@@ -581,10 +918,9 @@
   function toMenu() {
     if (game) game.stop();
     game = null;
-    [turnTicker, nextTicker, sitOutTicker, bankruptTicker].forEach(clearInterval);
-    closeModal(false);
-    toggleDrawer(null);
-    $('#sitout').hidden = true;
+    setup = null;
+    clearInterval(turnTicker);
+    resetTableUi();
     $('#table-screen').hidden = true;
     $('#menu').hidden = false;
     P.Menu.refresh();
@@ -650,6 +986,12 @@
       nextHand();
       return;
     }
+    // PageUp/PageDown прокручивают открытый журнал — стол меняют, только когда панели закрыты.
+    if ((e.code === 'PageUp' || e.code === 'PageDown') && !openDrawer() && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      switchStake(e.code === 'PageUp' ? 1 : -1);
+      return;
+    }
     if (!limits) return;
     if (inNumber) {
       if (e.code === 'Enter') { setRaise(e.target.value); act('raise'); }
@@ -669,9 +1011,14 @@
   function init() {
     const form = $('#setup');
     initHost();
+    P.Menu.init(); // сначала меню: оно рисует варианты турнирного взноса, которые восстанавливает applySetup
     applySetup(form, Object.assign({}, DEFAULTS, store.get('poker.setup', {})));
-    P.Menu.init();
+    P.Menu.syncBuyIns();
     form.addEventListener('submit', (e) => { e.preventDefault(); trySit(readSetup(form)); });
+    initSwipe();
+    $('#stake-up').addEventListener('click', () => switchStake(1));
+    $('#stake-down').addEventListener('click', () => switchStake(-1));
+    $('#board').addEventListener('click', (e) => { if (e.target.closest('[data-peek]')) revealPeek(); });
 
     P.Sound.enabled = store.get('poker.sound', true);
     updateSoundButton();
@@ -712,12 +1059,8 @@
 
   // Сетевой стол уходит со сцены: в лобби вернёт lobby.js.
   function closeTable() {
-    [turnTicker, nextTicker, sitOutTicker, bankruptTicker].forEach(clearInterval);
-    bankruptPromise = null;
-    closeModal(false);
-    toggleDrawer(null);
-    setDockActive(false);
-    $('#sitout').hidden = true;
+    clearInterval(turnTicker);
+    resetTableUi();
     $('#table-screen').hidden = true;
     document.body.classList.remove('online');
     game = null;
@@ -745,7 +1088,7 @@
     }));
   }
 
-  P.UI = { attachSession, closeTable, render: () => render(), onHumanTurn, onHandEnd, onNewHand, onLog, onBankrupt, onSitOut };
+  P.UI = { attachSession, closeTable, render: () => render(), onHumanTurn, onHandEnd, onNewHand, onLog, onBankrupt, onSitOut, onTournamentResult };
 
   document.addEventListener('DOMContentLoaded', () => {
     init();

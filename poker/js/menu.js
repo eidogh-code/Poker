@@ -67,16 +67,41 @@
     return granted;
   }
 
-  // Взносы дороже баланса недоступны; если выбранный стал недоступен — берём самый крупный доступный.
+  // Меню под выбранный формат: за кэш-стол садимся «по максимуму» (стол подбирается по балансу),
+  // в турнире выбирается взнос; взносы дороже баланса недоступны.
   function syncBuyIns() {
+    const form = $('#setup');
+    if (!form) return;
     const balance = Profile.get().balance;
-    const inputs = Array.from(document.querySelectorAll('input[name="stack"]'));
+    const mode = new FormData(form).get('mode') || 'holdem';
+    form.dataset.format = new FormData(form).get('format') || 'cash';
+
+    const stake = P.pickStake(mode, balance);
+    if (stake) {
+      const [sb, bb] = P.blindsFor(stake);
+      $('#table-pick').textContent = `Блайнды ${fmt(sb)} / ${fmt(bb)}, с собой ${fmt(stake)} — это 100 больших блайндов, `
+        + 'максимум по вашему балансу. За столом свайп двумя пальцами вверх или вниз — стол выше или ниже.';
+    } else {
+      $('#table-pick').textContent = `Самый дешёвый стол — ${fmt(P.stakesFor(mode)[0])}, на балансе меньше. Заберите ежедневный бонус.`;
+    }
+
+    const inputs = Array.from(document.querySelectorAll('input[name="tbuy"]'));
     inputs.forEach((input) => { input.disabled = Number(input.value) > balance; });
     const checked = inputs.find((i) => i.checked);
     if (checked && checked.disabled) {
       const affordable = inputs.filter((i) => !i.disabled);
       if (affordable.length) affordable[affordable.length - 1].checked = true;
     }
+    const fd = new FormData(form); // перечитываем: выбор взноса мог смениться выше
+    const buyIn = Number(fd.get('tbuy')) || P.TOURNEY.buyIns[0];
+    const players = (Number(fd.get('opponents')) || 1) + 1;
+    $('#tourney-pick').textContent = `Призовой фонд ${fmt(buyIn * players)} забирает победитель. `
+      + `У всех ${fmt(P.TOURNEY.stack)} турнирных фишек, блайнды растут каждые ${P.TOURNEY.handsPerLevel} раздач.`;
+  }
+
+  function renderTourneyBuyIns() {
+    $('#tourney-buyins').innerHTML = P.TOURNEY.buyIns.map((v, i) => `
+      <label><input type="radio" name="tbuy" value="${v}"${i === 1 ? ' checked' : ''}><span>${fmt(v)}</span></label>`).join('');
   }
 
   function showNote(text) {
@@ -191,6 +216,8 @@
   /* ---------- запуск ---------- */
 
   function init() {
+    renderTourneyBuyIns();
+    $('#setup').addEventListener('change', syncBuyIns);
     Profile.load();
     const { recovered } = Profile.recoverTable(Profile.get());
     if (recovered) Profile.update((p) => Profile.recoverTable(p).state);

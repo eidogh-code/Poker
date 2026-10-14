@@ -44,6 +44,7 @@
   let retryTimer = 0;
   let status = 'off';
   let myId = null;
+  let boot = null; // метка запуска сервера: сменилась — сервер перезапускался
 
   // Ошибка одного подписчика не должна лишать сообщений остальных.
   function emit(type, payload) {
@@ -87,7 +88,11 @@
       let msg;
       try { msg = JSON.parse(e.data); } catch (err) { return; }
       if (!msg || typeof msg.t !== 'string') return;
-      if (msg.t === 'welcome') { myId = msg.id; setStatus('online'); }
+      if (msg.t === 'welcome') {
+        myId = msg.id;
+        boot = typeof msg.boot === 'string' && /^[0-9a-f]{1,32}$/.test(msg.boot) ? msg.boot : null;
+        setStatus('online');
+      }
       if (msg.t === 'replaced') wanted = false;
       emit(msg.t, msg);
     };
@@ -130,11 +135,15 @@
   /* ---------- RemoteGame: снимок сервера в форме Game ---------- */
 
   class RemoteGame {
+    // aof — «олл-ин или фолд» (кнопки по limits.aof); tournament — турнир: без пополнения, блайнды растут.
     constructor(room) {
       this.network = true;
       this.mode = room.mode;
-      this.cfg = { mode: room.mode, stack: room.buyIn };
-      this.holeN = room.mode === 'omaha' ? 4 : 2;
+      this.aof = P.isAof(room.mode);
+      this.tournament = room.format === 'tournament';
+      const stack = this.tournament ? P.TOURNEY.stack : room.buyIn;
+      this.cfg = { mode: room.mode, stack, format: this.tournament ? 'tournament' : 'cash' };
+      this.holeN = room.mode === 'omaha' || room.mode === 'aofomaha' ? 4 : 2;
       this.potLimit = room.mode === 'omaha';
       this.players = [];
       this.board = [];
@@ -154,6 +163,10 @@
     get me() { return this.players.find((p) => p.human) || null; }
 
     setRoom(room) { this.room = room; }
+
+    // Турнир: взнос и призовой фонд — из данных комнаты (сервер считает приз сам).
+    get buyIn() { return this.room ? this.room.buyIn : 0; }
+    get prize() { return this.room && this.tournament ? this.room.prize : 0; }
 
     // Своё место ставим первым — интерфейс рисует его снизу, как в офлайне. Чужие люди показываются с аватаром.
     // Аватары берём из данных комнаты (в снимках их нет) и ещё раз проверяем: сервер мог оказаться чужим.
@@ -178,7 +191,8 @@
         pot: s.pot, maxBet: s.maxBet, board: s.board, showdown: s.showdown, handsLeft: s.handsLeft,
         dealer: idx(s.dealerId), toAct: s.toActId ? idx(s.toActId) : -1,
       });
-      this.cfg.stack = s.buyIn;
+      this.aof = P.isAof(s.mode);
+      if (!this.tournament) this.cfg.stack = s.buyIn; // в турнире взнос — деньги, а не стек
     }
 
     handsLeftAtLevel() { return this.handsLeft; }
@@ -193,6 +207,7 @@
     connect, disconnect, send, on, serverUrl, setServerUrl, normalizeUrl,
     get status() { return status; },
     get id() { return myId; },
+    get boot() { return boot; },
     RemoteGame,
   };
 })(window.Poker = window.Poker || {});

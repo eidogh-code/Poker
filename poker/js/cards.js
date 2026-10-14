@@ -170,7 +170,12 @@
     return best;
   }
 
+  // AoF — те же правила комбинаций, что у базовой игры: AoF Холдем как Холдем, AoF Омаха как Омаха.
+  const BASE_MODE = { aof: 'holdem', aofomaha: 'omaha' };
+  const baseMode = (mode) => BASE_MODE[mode] || mode;
+
   function bestScore(mode, hole, board) {
+    mode = baseMode(mode);
     if (mode === 'omaha') return board.length >= 3 ? evalOmaha(hole, board) : evalPlain(hole);
     if (mode === 'short') return swapShortCategory(evalPlain(hole.concat(board), true));
     return evalBest(hole.concat(board));
@@ -194,6 +199,7 @@
   }
 
   function equity(mode, hole, board, nOpp, iters) {
+    mode = baseMode(mode);
     if (nOpp <= 0) return 1;
     const known = new Set(hole.concat(board).map((c) => c.id));
     const deck = makeDeck(mode).filter((c) => !known.has(c.id));
@@ -227,6 +233,7 @@
   }
 
   P.Cards = {
+    baseMode,
     randInt,
     makeDeck,
     shuffle,

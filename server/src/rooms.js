@@ -1,11 +1,11 @@
 // Комнаты: ожидание игроков, запуск стола, снимки состояния для каждого игрока, банкротство, «отошёл», чат.
+// Турниры (Sit & Go): очередь по режиму и взносу, старт без комнаты ожидания, места и приз победителю.
 'use strict';
 
 const crypto = require('node:crypto');
-const { loadEngine } = require('./engine');
+const { P } = require('./engine');
 const { ratingId } = require('./ratings');
 
-const P = loadEngine();
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // без похожих 0/O и 1/I
 const MAX_ROOMS = 500;
 const MAX_BOT_ROOMS = 20;              // боты считаются на сервере — ограничиваем нагрузку на процессор
@@ -17,6 +17,13 @@ const SIT_OUT_MS = 3 * 60 * 1000;
 const WAITING_GRACE_MS = 60 * 1000;    // сколько держим место в комнате до старта за отключившимся
 const ROOM_IDLE_MS = 30 * 60 * 1000;   // комната без игры и без активности удаляется
 const CHAT_HISTORY = 50;
+const TOURNEY_WAIT_MS = 30 * 1000;      // очередь из 2+ игроков стартует, не дождавшись полного стола
+const FINISHED_TTL_MS = 10 * 60 * 1000; // доигранный турнир держим, пока все не посмотрят итог
+const PENDING_TTL_MS = 24 * 60 * 60 * 1000; // сессию с недоставленным итогом или уходом храним сутки
+const TOURNEY_RETRY_MS = 5000;          // сервер полон — старт турнира откладывается
+// Метка запуска процесса: по ней клиент отличает «сервер перезапускался» от «нас выписали без связи».
+const BOOT_ID = crypto.randomBytes(6).toString('hex');
+const MODE_NAME = { holdem: 'Холдем', omaha: 'Омаха', joker: 'С джокерами', short: 'Шорт-дек', aof: 'AoF Холдем', aofomaha: 'AoF Омаха' };
 const MAX_BUFFERED = 1 << 20;          // клиент, который не читает сокет, не должен копить память сервера
 
 const newId = (prefix) => `${prefix}${crypto.randomBytes(6).toString('hex')}`;
@@ -45,10 +52,20 @@ class Room {
     this.graceTimers = new Map();
     this.flushQueued = false;
     this.lastActivity = Date.now();
+    this.entrants = 0;          // турнир: сколько игроков начали (от этого приз)
+    this.results = new Map();   // турнир: id → итог, чтобы повторить его после переподключения
+    this.finished = false;
   }
 
   get started() { return Boolean(this.game); }
-  get blinds() { return P.LEVELS[this.settings.level]; }
+  get tournament() { return this.settings.format === 'tournament'; }
+  get prize() { return this.settings.buyIn * this.entrants; }
+  // Кэш: блайнды — сотая часть взноса и не растут; турнир — текущий уровень движка.
+  get blinds() {
+    if (this.game && this.game.bb) return [this.game.sb, this.game.bb];
+    const [sb, bb] = this.tournament ? P.TOURNEY.levels[0] : P.blindsFor(this.settings.buyIn);
+    return [sb, bb];
+  }
 
   touch() { this.lastActivity = Date.now(); }
 
@@ -56,14 +73,15 @@ class Room {
     return {
       code: this.code, name: this.settings.name, mode: this.settings.mode,
       buyIn: this.settings.buyIn, blinds: this.blinds, bots: this.settings.bots,
-      humans: this.members.size, seats: MAX_SEATS, started: this.started,
+      humans: this.members.size, seats: MAX_SEATS, started: this.started, format: this.settings.format || 'cash',
     };
   }
 
   info() {
     return {
       ...this.summary(),
-      visibility: this.settings.visibility, level: this.settings.level, blindUp: this.settings.blindUp,
+      visibility: this.settings.visibility,
+      ...(this.tournament ? { prize: this.prize, players: this.entrants, finished: this.finished } : {}),
       hostId: this.hostId,
       members: [...this.members.values()].map((s) => ({ id: s.id, nick: s.nick, avatar: s.avatar, connected: Boolean(s.ws) })),
     };
@@ -94,15 +112,21 @@ class Room {
     if (!this.members.has(session.id)) return;
     const seat = this.game ? this.game.byId(session.id) : null;
     // Не севший за стол (до старта или в очереди на место) получает взнос обратно.
-    const chips = seat ? (seat.leaving ? 0 : seat.chips) : this.settings.buyIn;
+    // Турнирные фишки — не деньги: ушедший из турнира ничего не получает (это сдача турнира).
+    const chips = this.tournament ? 0 : (seat ? (seat.leaving ? 0 : seat.chips) : this.settings.buyIn);
     this.members.delete(session.id);
     session.roomCode = null;
     this.turns.delete(session.id);
+    // Итог турнира без связи (комнату распустили до переподключения) дождётся игрока в сессии — приз не пропадёт.
+    const result = this.results.get(session.id);
+    if (result && !session.ws) session.pendingResult = result;
+    this.results.delete(session.id);
     this.cancelRebuy(session.id);
     this.cancelSitOut(session.id);
     this.clearGrace(session.id);
     if (this.game) this.game.removePlayer(session.id);
-    const left = { t: 'left', reason, chips };
+    // Из турнира — с кодом и меткой запуска: по ним клиент найдёт свою отметку о взносе (например, для возврата).
+    const left = this.tournament ? { t: 'left', reason, chips, code: this.code, boot: BOOT_ID } : { t: 'left', reason, chips };
     if (session.ws) this.sendSession(session, left); else session.pendingLeft = left;
     this.system(`${session.nick} выходит из комнаты`);
     if (!this.members.size) { this.destroy(); return; }
@@ -129,7 +153,9 @@ class Room {
     const rebuy = this.rebuys.get(session.id);
     if (rebuy) this.sendTo(session.id, { t: 'bankrupt', remaining: rebuy.deadline - now, buyIn: this.settings.buyIn });
     const away = this.sitOuts.get(session.id);
-    if (away) this.sendTo(session.id, { t: 'sitout', remaining: away.deadline - now });
+    if (away) this.sendTo(session.id, { t: 'sitout', remaining: away.deadline ? away.deadline - now : null, tournament: this.tournament });
+    const result = this.results.get(session.id);
+    if (result) this.sendTo(session.id, result);
   }
 
   clearGrace(id) {
@@ -145,15 +171,43 @@ class Room {
     if (this.members.size < 2 && !this.settings.bots) return 'Нужен хотя бы ещё один игрок — или включите ботов';
     const s = this.settings;
     const players = [...this.members.values()].map((m) => ({ id: m.id, name: m.nick, avatar: m.avatar, chips: s.buyIn }));
+    // Блайнды движок выводит из взноса (P.blindsFor) и за кэш-столом не поднимает.
     this.game = new P.Game({
-      mode: s.mode, stack: s.buyIn, level: s.level, blindUp: s.blindUp, speed: 'normal',
-      bots: s.bots, opponents: MAX_SEATS - 1, autoNextMs: AUTO_NEXT_MS, players,
+      mode: s.mode, stack: s.buyIn, speed: 'normal',
+      bots: s.bots, opponents: MAX_SEATS - 1, autoNextMs: this.lobby.autoNextMs, players,
     }, this.hooks());
     this.game.start();
     this.touch();
     this.system('Игра началась');
     this.broadcastInfo();
     return null;
+  }
+
+  // Турнир: участники уже собраны очередью, игра начинается сразу. Стек у всех одинаковый, ботов нет.
+  // Сначала то, что может упасть (движок), и только потом игроки привязываются к комнате и получают сообщения.
+  startTournament(sessions) {
+    this.entrants = sessions.length;
+    const players = sessions.map((m) => ({ id: m.id, name: m.nick, avatar: m.avatar, chips: P.TOURNEY.stack }));
+    this.game = new P.Game({
+      mode: this.settings.mode, format: 'tournament', stack: P.TOURNEY.stack, speed: 'normal',
+      bots: false, opponents: MAX_SEATS - 1, autoNextMs: this.lobby.autoNextMs, players,
+    }, this.hooks());
+    this.game.start();
+    for (const session of sessions) {
+      this.members.set(session.id, session);
+      session.roomCode = this.code;
+    }
+    this.touch();
+    this.system(`Турнир начался: игроков — ${sessions.length}, приз ${this.prize.toLocaleString('ru-RU')}`);
+    this.broadcastInfo();
+    for (const session of sessions) this.sendTo(session.id, { t: 'chatHistory', messages: this.chat });
+  }
+
+  // Итог турнира игроку: выбывшему — сразу, победителю — в конце. Хранится, пока игрок в комнате.
+  tourneyResult(id, place, prize) {
+    const msg = { t: 'tourneyResult', code: this.code, boot: BOOT_ID, place, prize, players: this.entrants, buyIn: this.settings.buyIn };
+    this.results.set(id, msg);
+    this.sendTo(id, msg);
   }
 
   hooks() {
@@ -169,14 +223,28 @@ class Room {
         this.turns.clear();
         this.recordRating(summary);
         const winners = summary.winners.map((w) => ({ id: w.id, name: w.name, won: w.won, handName: w.handName }));
+        // Все спасовали: показываем карты, которые легли бы на стол. Колода всё равно перемешивается заново.
+        const rest = summary.type === 'fold' && Array.isArray(summary.rest) ? summary.rest : [];
         this.flushNow();
-        this.broadcast({ t: 'handEnd', summary: { type: summary.type, winners }, nextIn: AUTO_NEXT_MS });
+        this.broadcast({ t: 'handEnd', summary: { type: summary.type, winners, rest }, nextIn: this.lobby.autoNextMs });
       },
-      onHandSettled: (p, chips) => this.sendTo(p.id, { t: 'chips', chips }),
+      // Турнирные фишки — не деньги: на баланс клиента они не попадают, поэтому и не сообщаем.
+      onHandSettled: (p, chips) => { if (!this.tournament) this.sendTo(p.id, { t: 'chips', chips }); },
       onBankrupt: (p) => this.askRebuy(p),
       onSitOut: (p) => this.startSitOut(p),
+      // Ушедший сам уже получил «left» — итог нужен только тем, кто ещё в комнате.
+      onEliminated: (p, place) => { if (p.human && this.members.has(p.id)) this.tourneyResult(p.id, place, 0); },
+      onTournamentEnd: ({ winner }) => {
+        this.finished = true;
+        this.turns.clear();
+        if (winner && winner.human) this.tourneyResult(winner.id, 1, this.prize);
+        this.system(winner ? `Турнир окончен. Победитель — ${winner.name}` : 'Турнир окончен');
+        this.broadcastInfo();
+      },
       onError: (e) => {
         console.error(`[room ${this.code}] engine error:`, e);
+        // Турнир без движка не доиграть: распускаем, клиенты вернут себе взнос (уход с причиной «aborted»).
+        if (this.tournament) { this.destroy('aborted'); return; }
         this.broadcast({ t: 'error', msg: 'Игра на сервере остановилась. Выйдите из комнаты и создайте новую.' });
       },
       onLog: (text, kind) => this.broadcast({ t: 'log', text, kind }),
@@ -188,7 +256,7 @@ class Room {
   // иначе рейтинг набивали бы на ботах. Сбой рейтинга не должен останавливать игру.
   recordRating(summary) {
     const ratings = this.lobby.ratings;
-    if (!ratings || this.settings.bots || !summary.winners.length) return;
+    if (!ratings || this.settings.bots || this.tournament || !summary.winners.length) return;
     try {
       ratings.recordHand(this.handResults());
     } catch (e) {
@@ -206,10 +274,19 @@ class Room {
       });
   }
 
+  // Сохранённый ход стираем, только если ход действительно этого игрока: чужой «ход» движок всё равно отбросит.
   act(session, action) {
-    if (!this.game) return;
-    this.turns.delete(session.id);
-    this.game.humanAct(action, session.id);
+    const g = this.game;
+    if (!g) return;
+    if (g.pendingKind === 'action' && g.pendingPlayer === session.id) this.turns.delete(session.id);
+    g.humanAct(action, session.id);
+  }
+
+  // Турнир: выбывшие смотрят молча, чтобы не подсказывать оставшимся. Победителю писать можно.
+  canChat(session) {
+    if (!this.tournament || !this.game) return true;
+    const seat = this.game.byId(session.id);
+    return Boolean(seat) && (!seat.place || seat.place === 1);
   }
 
   // Кончились фишки: минута на ответ «пополнить / уйти». Молчание — уход.
@@ -250,8 +327,14 @@ class Room {
   }
 
   // «Отошёл»: три минуты, чтобы вернуться, иначе место освобождается.
+  // В турнире место не освобождаем: отошедший сидит в раздачах и платит блайнды, пока не вернётся или не выбудет.
   startSitOut(p) {
     this.cancelSitOut(p.id);
+    if (this.tournament) {
+      this.sitOuts.set(p.id, { timer: null, deadline: 0 });
+      this.sendTo(p.id, { t: 'sitout', remaining: null, tournament: true });
+      return;
+    }
     const deadline = Date.now() + SIT_OUT_MS;
     const timer = setTimeout(() => {
       this.sitOuts.delete(p.id);
@@ -365,10 +448,14 @@ class Room {
 }
 
 class Lobby {
-  constructor(ratings = null) {
+  // tourneyWaitMs и autoNextMs настраиваются ради быстрых тестов.
+  constructor(ratings = null, { tourneyWaitMs = TOURNEY_WAIT_MS, autoNextMs = AUTO_NEXT_MS } = {}) {
     this.ratings = ratings;
     this.rooms = new Map();
     this.sessions = new Map(); // секретный ключ клиента → сессия
+    this.queues = new Map();   // «режим:взнос» → { key, mode, buyIn, members: [сессии], timer, since }
+    this.tourneyWaitMs = tourneyWaitMs;
+    this.autoNextMs = autoNextMs;
   }
 
   newCode() {
@@ -382,7 +469,10 @@ class Lobby {
   session(key) {
     let s = this.sessions.get(key);
     if (!s) {
-      s = { key, rid: ratingId(key), id: newId('p'), nick: 'Игрок', avatar: null, ws: null, roomCode: null, lastSeen: Date.now(), pendingLeft: null };
+      s = {
+        key, rid: ratingId(key), id: newId('p'), nick: 'Игрок', avatar: null, ws: null, roomCode: null,
+        queueKey: null, lastSeen: Date.now(), pendingLeft: null, pendingResult: null,
+      };
       this.sessions.set(key, s);
     }
     return s;
@@ -390,10 +480,10 @@ class Lobby {
 
   roomOf(session) { return session.roomCode ? this.rooms.get(session.roomCode) || null : null; }
 
-  // Открытые комнаты в списке; закрытые находятся только по коду.
+  // Открытые комнаты в списке; закрытые и турнирные находятся только по коду.
   list() {
     return [...this.rooms.values()]
-      .filter((r) => r.settings.visibility === 'open')
+      .filter((r) => r.settings.visibility === 'open' && !r.tournament)
       .map((r) => r.summary())
       .sort((a, b) => Number(a.started) - Number(b.started) || b.humans - a.humans);
   }
@@ -408,6 +498,7 @@ class Lobby {
   canJoin(code) {
     const room = this.rooms.get(code);
     if (!room) return 'Комнаты с таким кодом нет. Проверьте код или попросите новый.';
+    if (room.tournament) return 'Это турнирный стол — к идущему турниру подсесть нельзя. Встаньте в очередь на новый турнир.';
     if (room.isFull()) return 'За этим столом нет свободных мест';
     if (room.game && room.game.freeSeatsForHumans() <= 0) return 'За этим столом нет свободных мест';
     return null;
@@ -428,6 +519,104 @@ class Lobby {
     return { room };
   }
 
+  /* ---------- очередь на турнир ---------- */
+
+  // Сводка очередей для лобби: кто где ждёт (без имён).
+  queueList() {
+    return [...this.queues.values()].map((q) => ({ mode: q.mode, buyIn: q.buyIn, count: q.members.length }));
+  }
+
+  queueStatus(q) {
+    return {
+      mode: q.mode, buyIn: q.buyIn, count: q.members.length, max: MAX_SEATS,
+      startsIn: q.since ? Math.max(0, q.since + this.tourneyWaitMs - Date.now()) : null,
+    };
+  }
+
+  notifyQueue(q) {
+    const data = JSON.stringify({ t: 'queue', queue: this.queueStatus(q) });
+    for (const s of q.members) safeSend(s.ws, data);
+  }
+
+  // null — встал в очередь; строка — причина отказа. Сессия бывает либо в одной очереди, либо в одной комнате.
+  enqueue(session, { mode, buyIn }) {
+    if (session.roomCode) return 'Сначала выйдите из-за стола';
+    const key = `${mode}:${buyIn}`;
+    if (session.queueKey === key) { this.notifyQueue(this.queues.get(key)); return null; }
+    if (this.rooms.size >= MAX_ROOMS) return 'Сервер переполнен, попробуйте позже';
+    this.dequeue(session, false);
+    let q = this.queues.get(key);
+    if (!q) {
+      q = { key, mode, buyIn, members: [], timer: null, since: 0 };
+      this.queues.set(key, q);
+    }
+    q.members.push(session);
+    session.queueKey = key;
+    this.queueChanged(q);
+    return null;
+  }
+
+  // notify — сообщить самому игроку, что он больше не в очереди.
+  dequeue(session, notify = true) {
+    const q = session.queueKey ? this.queues.get(session.queueKey) : null;
+    session.queueKey = null;
+    if (!q) return;
+    q.members = q.members.filter((s) => s !== session);
+    if (notify) safeSend(session.ws, JSON.stringify({ t: 'queue', queue: null }));
+    this.queueChanged(q);
+  }
+
+  // Полный стол — старт сразу; двое и больше — через tourneyWaitMs после того, как набралось двое.
+  queueChanged(q) {
+    const n = q.members.length;
+    if (!n) { clearTimeout(q.timer); this.queues.delete(q.key); return; }
+    if (n >= MAX_SEATS) { this.startTourney(q); return; }
+    if (n < 2) { clearTimeout(q.timer); q.timer = null; q.since = 0; }
+    else if (!q.timer) {
+      q.since = Date.now();
+      q.timer = setTimeout(() => this.startTourney(q), this.tourneyWaitMs);
+    }
+    this.notifyQueue(q);
+  }
+
+  // Старт либо проходит целиком, либо откатывается: игроки свободны и знают, что турнир не начался.
+  startTourney(q) {
+    clearTimeout(q.timer);
+    q.timer = null;
+    if (this.rooms.size >= MAX_ROOMS) {
+      // Сервер полон: очередь сохраняется, пробуем снова чуть позже.
+      q.timer = setTimeout(() => this.startTourney(q), Math.min(TOURNEY_RETRY_MS, this.tourneyWaitMs));
+      return;
+    }
+    this.queues.delete(q.key);
+    // Старт ровно на шестом игроке, поэтому больше шести в очереди не бывает.
+    const sessions = q.members.splice(0);
+    sessions.forEach((s) => { s.queueKey = null; });
+    const settings = {
+      name: `Турнир · ${MODE_NAME[q.mode] || q.mode}`, visibility: 'closed', mode: q.mode,
+      buyIn: q.buyIn, bots: false, format: 'tournament',
+    };
+    const queueOff = JSON.stringify({ t: 'queue', queue: null });
+    let room = null;
+    try {
+      room = new Room(this, settings, sessions[0]);
+      this.rooms.set(room.code, room);
+      sessions.forEach((s) => safeSend(s.ws, queueOff));
+      room.startTournament(sessions);
+    } catch (e) {
+      console.error('не удалось начать турнир:', e);
+      if (room) {
+        if (room.game) room.game.stop();
+        this.rooms.delete(room.code);
+      }
+      const failed = JSON.stringify({ t: 'error', msg: 'Турнир не удалось начать. Встаньте в очередь ещё раз.' });
+      sessions.forEach((s) => {
+        if (room && s.roomCode === room.code) s.roomCode = null;
+        safeSend(s.ws, failed);
+      });
+    }
+  }
+
   // Уборка: сессии без соединения и без комнаты, «мёртвые» сокеты, забытые комнаты без игры.
   sweep(maxIdleMs) {
     const now = Date.now();
@@ -436,13 +625,17 @@ class Lobby {
         s.ws = null;
         const room = this.roomOf(s);
         if (room) room.disconnected(s);
+        this.dequeue(s, false);
       }
-      if (!s.ws && !s.roomCode && now - s.lastSeen > maxIdleMs) this.sessions.delete(key);
+      // Недоставленный итог турнира или уход (с фишками) не теряем: такую сессию держим сутки.
+      const ttl = s.pendingResult || s.pendingLeft ? PENDING_TTL_MS : maxIdleMs;
+      if (!s.ws && !s.roomCode && !s.queueKey && now - s.lastSeen > ttl) this.sessions.delete(key);
     }
     for (const room of [...this.rooms.values()]) {
       if (!room.game && now - room.lastActivity > ROOM_IDLE_MS) room.destroy('idle');
+      else if (room.finished && now - room.lastActivity > FINISHED_TTL_MS) room.destroy('finished');
     }
   }
 }
 
-module.exports = { Lobby, Room, P, safeSend };
+module.exports = { Lobby, Room, P, safeSend, BOOT_ID };

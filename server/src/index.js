@@ -3,7 +3,7 @@
 
 const http = require('node:http');
 const { WebSocketServer } = require('ws');
-const { Lobby, safeSend } = require('./rooms');
+const { Lobby, safeSend, BOOT_ID } = require('./rooms');
 const V = require('./validate');
 const { Ratings, storeFromEnv } = require('./ratings');
 
@@ -21,12 +21,17 @@ const HEARTBEAT_MS = 25000;
 const SESSION_IDLE_MS = 10 * 60 * 1000;
 const RATING_GAP_MS = 1000;               // таблицу рейтинга — не чаще раза в секунду
 
-// Адрес клиента: за прокси хостинга — первый адрес из X-Forwarded-For, иначе адрес сокета.
-const ipOf = (req) => String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '?';
+// Адрес клиента: за прокси хостинга — последний адрес из X-Forwarded-For (его дописывает сам прокси;
+// первые записи присылает клиент и может подделать), иначе адрес сокета.
+function ipOf(req) {
+  const chain = String(req.headers['x-forwarded-for'] || '').split(',').map((s) => s.trim()).filter(Boolean);
+  return chain[chain.length - 1] || req.socket.remoteAddress || '?';
+}
 
 // ratings — общий рейтинг; по умолчанию только в памяти (тесты), в работе — с хранилищем из окружения.
-function createServer({ ratings = new Ratings() } = {}) {
-  const lobby = new Lobby(ratings);
+// tourneyWaitMs / autoNextMs — ожидание неполной очереди турнира и пауза между раздачами (тесты их сокращают).
+function createServer({ ratings = new Ratings(), tourneyWaitMs, autoNextMs } = {}) {
+  const lobby = new Lobby(ratings, { tourneyWaitMs, autoNextMs });
   const perIp = new Map();
 
   const server = http.createServer((req, res) => {
@@ -108,7 +113,15 @@ function onMessage(lobby, conn, data) {
   if (room) room.touch();
 
   switch (msg.t) {
-    case 'list': send(ws, { t: 'rooms', rooms: lobby.list() }); break;
+    case 'list': send(ws, { t: 'rooms', rooms: lobby.list(), queues: lobby.queueList() }); break;
+    case 'queue': {
+      const q = V.tourneyQueue(msg);
+      if (!q) { fail(ws, 'Такого турнира нет'); break; }
+      const err = lobby.enqueue(session, q);
+      if (err) fail(ws, err);
+      break;
+    }
+    case 'unqueue': lobby.dequeue(session); break;
     case 'rating': {
       const now = Date.now();
       if (now - conn.lastRating < RATING_GAP_MS) break;
@@ -123,6 +136,7 @@ function onMessage(lobby, conn, data) {
       const check = lobby.canCreate(settings);
       if (check) { fail(ws, check); break; }
       session.lastCreate = now;
+      lobby.dequeue(session);
       if (room) room.leave(session, 'switch');
       lobby.create(session, settings);
       break;
@@ -134,6 +148,7 @@ function onMessage(lobby, conn, data) {
       // Сначала проверяем, что за целевым столом есть место, и только потом уходим из текущего.
       const check = lobby.canJoin(code);
       if (check) { fail(ws, check); break; }
+      lobby.dequeue(session);
       if (room) room.leave(session, 'switch');
       const result = lobby.join(session, code);
       if (result.error) fail(ws, result.error);
@@ -147,6 +162,7 @@ function onMessage(lobby, conn, data) {
     case 'chat': {
       const text = V.chat(msg.text);
       if (!room || !text) break;
+      if (!room.canChat(session)) { fail(ws, 'Выбывшие из турнира не пишут в чат стола'); break; }
       const now = Date.now();
       if (now - conn.lastChat < CHAT_GAP_MS) { fail(ws, 'Не так быстро — сообщения в чат не чаще раза в секунду'); break; }
       conn.lastChat = now;
@@ -174,9 +190,11 @@ function hello(lobby, conn, msg) {
   session.lastSeen = Date.now();
   conn.session = session;
   // Уход, случившийся без связи (выбыл по таймеру, комнату распустили), доставляем первым делом.
+  // Итог турнира — раньше ухода: клиент сначала зачислит приз, потом покажет лобби.
+  if (session.pendingResult) { send(conn.ws, session.pendingResult); session.pendingResult = null; }
   if (session.pendingLeft) { send(conn.ws, session.pendingLeft); session.pendingLeft = null; }
   const room = lobby.roomOf(session);
-  send(conn.ws, { t: 'welcome', id: session.id, room: room ? room.code : null });
+  send(conn.ws, { t: 'welcome', id: session.id, room: room ? room.code : null, boot: BOOT_ID });
   if (room) room.reconnected(session);
 }
 
@@ -185,6 +203,8 @@ function onClose(lobby, conn) {
   if (!session || session.ws !== conn.ws) return;
   session.ws = null;
   session.lastSeen = Date.now();
+  // Без связи в очереди не стоят: иначе турнир начался бы с отсутствующим игроком. Клиент встанет снова после переподключения.
+  lobby.dequeue(session, false);
   const room = lobby.roomOf(session);
   if (room) room.disconnected(session);
 }
@@ -206,4 +226,4 @@ if (require.main === module) {
   process.once('SIGINT', shutdown);
 }
 
-module.exports = { createServer };
+module.exports = { createServer, ipOf };

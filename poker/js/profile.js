@@ -79,6 +79,15 @@
     return { state: { ...state, balance: state.balance - chips, table: state.table + chips }, ok: true };
   }
 
+  // Турнир: взнос уходит в призовой фонд, фишки турнира деньгами не считаются (table не трогаем).
+  function payEntry(state, amount) {
+    const fee = wholeChips(amount);
+    if (!fee || fee > state.balance) return { state, ok: false };
+    return { state: { ...state, balance: state.balance - fee }, ok: true };
+  }
+
+  const award = (state, amount) => ({ ...state, balance: state.balance + wholeChips(amount) });
+
   const setTableChips = (state, chips) => ({ ...state, table: wholeChips(chips) });
 
   const cashOut = (state, chips) => ({ ...state, balance: state.balance + wholeChips(chips), table: 0 });
@@ -127,7 +136,7 @@
     START_BALANCE, DAILY_BONUS, AVATAR_GLYPHS, FELTS, BACKS,
     defaults, normalize, sanitizeNick, dayKey,
     bonusAvailable, msToNextBonus, claimBonus,
-    buyIn, setTableChips, cashOut, recoverTable,
+    buyIn, payEntry, award, setTableChips, cashOut, recoverTable,
     load, get, update, subscribe,
   };
 })(window.Poker = window.Poker || {});

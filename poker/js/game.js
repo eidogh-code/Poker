@@ -1,12 +1,23 @@
-// Кэш-стол: блайнды, улицы, торговля, побочные банки, вскрытие, таймер хода, «отошёл», пересадка ботов.
+// Стол: блайнды, улицы, торговля, побочные банки, вскрытие, таймер хода, «отошёл», пересадка ботов.
+// Форматы: кэш-стол (блайнды постоянные, фишки можно докупить) и турнир (блайнды растут, вылет, места).
+// Режимы AoF («олл-ин или фолд»): одна торговля, где можно только поставить всё или сбросить.
 // Один движок для офлайна (браузер/приложение) и для сервера сетевой игры: за столом может быть
 // сколько угодно людей (human) и ботов, у каждого игрока постоянный id, места меняются между раздачами.
 (function (P) {
   'use strict';
 
   const C = P.Cards;
-  const LEVELS = [[5, 10], [10, 20], [15, 30], [25, 50], [50, 100], [75, 150], [100, 200], [150, 300], [200, 400], [300, 600], [500, 1000], [1000, 2000]];
-  const HANDS_PER_LEVEL = 10;
+  // Кэш: за стол садятся ровно со 100 большими блайндами, поэтому блайнды определяет взнос.
+  const CASH_STAKES = [500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000];
+  const AOF_STAKES = [1000, 2000, 5000];
+  const BIG_BLINDS_PER_BUYIN = 100;
+  // Турнир: у всех одинаковый стартовый стек, блайнды растут каждые TOURNEY_HANDS_PER_LEVEL раздач.
+  const TOURNEY_BUY_INS = [500, 1000, 2000, 5000, 10000];
+  const TOURNEY_STACK = 1500;
+  const TOURNEY_LEVELS = [[10, 20], [15, 30], [25, 50], [50, 100], [75, 150], [100, 200], [150, 300], [200, 400],
+    [300, 600], [400, 800], [600, 1200], [800, 1600], [1000, 2000], [1500, 3000], [2000, 4000], [3000, 6000], [5000, 10000]];
+  const TOURNEY_HANDS_PER_LEVEL = 6;
+  const AOF_MODES = ['aof', 'aofomaha'];
   const MAX_SEATS = 6;
   const TURN_MS = 30 * 1000;      // время на ход
   const TURN_CHECK_MS = 250;      // как часто сверяться с часами (переживает паузу приложения)
@@ -34,6 +45,21 @@
   ];
   const ABORT = new Error('game aborted');
   const fmt = (n) => Number(n).toLocaleString('ru-RU');
+  const noop = () => {};
+
+  // Блайнды кэш-стола: большой — сотая часть взноса, малый — половина большого.
+  function blindsFor(buyIn) {
+    const bb = Math.max(2, Math.round(buyIn / BIG_BLINDS_PER_BUYIN));
+    return [Math.floor(bb / 2), bb];
+  }
+
+  const isAof = (mode) => AOF_MODES.includes(mode);
+  const stakesFor = (mode) => (isAof(mode) ? AOF_STAKES : CASH_STAKES);
+  // За кэш-стол садятся «по максимуму»: самый дорогой стол, на который хватает денег; 0 — ни на какой.
+  function pickStake(mode, money) {
+    const fits = stakesFor(mode).filter((s) => s <= money);
+    return fits.length ? fits[fits.length - 1] : 0;
+  }
 
   let botSeq = 0;
   const botId = () => `bot-${++botSeq}`;
@@ -43,14 +69,14 @@
       chips, hole: [], bet: 0, total: 0,
       folded: false, allIn: false, acted: false, out: false,
       sittingOut: false, owesBB: false, newcomer: false, leaving: false,
-      lastAction: '', handName: '', winner: false, won: 0, tone: 0,
+      lastAction: '', handName: '', winner: false, won: 0, tone: 0, startChips: chips, place: 0,
     });
   }
 
   class Game {
     constructor(cfg, hooks) {
       this.cfg = cfg;
-      this.hooks = hooks;
+      this.hooks = Object.assign({ onEliminated: noop, onTournamentEnd: noop }, hooks);
       this.gen = 0;
       this.pending = null;
       this.pendingKind = null;
@@ -72,18 +98,24 @@
       this.stop();
       const cfg = this.cfg;
       this.mode = cfg.mode;
-      this.holeN = cfg.mode === 'omaha' ? 4 : 2;
+      this.aof = isAof(cfg.mode);
+      this.tournament = cfg.format === 'tournament';
+      this.holeN = cfg.mode === 'omaha' || cfg.mode === 'aofomaha' ? 4 : 2;
       this.potLimit = cfg.mode === 'omaha';
+      // Стек ботов и офлайн-игрока: в турнире стартовый турнирный, за кэш-столом — взнос.
+      this.stack = this.tournament ? TOURNEY_STACK : cfg.stack;
+      this.standings = [];
+      this.finished = false;
       // cfg.players — люди за столом (сеть); без него — один офлайн-игрок с ником из профиля.
-      const humans = cfg.players || [{ id: 'me', name: cfg.nick, avatar: cfg.avatar, human: true, chips: cfg.stack }];
+      const humans = cfg.players || [{ id: 'me', name: cfg.nick, avatar: cfg.avatar, human: true, chips: this.stack }];
       this.players = humans.map((h) => freshSeat({ id: h.id, name: h.name, avatar: h.avatar, human: true }, h.chips));
       const botCount = cfg.players ? (cfg.bots ? Math.max(0, cfg.opponents + 1 - this.players.length) : 0) : cfg.opponents;
       this.addBots(botCount);
       this.retone();
       this.dealer = C.randInt(this.players.length);
       this.handNo = 0;
-      this.level = cfg.level;
-      [this.sb, this.bb] = LEVELS[this.level];
+      this.level = 0;
+      [this.sb, this.bb] = this.tournament ? TOURNEY_LEVELS[0] : (cfg.blinds || blindsFor(cfg.stack));
       this.board = [];
       this.pot = 0;
       this.maxBet = 0;
@@ -98,7 +130,7 @@
       const free = ROSTER.filter((b) => !seated.has(b.name));
       for (let i = 0; i < count && this.players.length < MAX_SEATS; i++) {
         const b = free[i] || ROSTER[C.randInt(ROSTER.length)];
-        this.players.push(freshSeat({ id: botId(), name: b.name, persona: b.persona, human: false }, this.cfg.stack));
+        this.players.push(freshSeat({ id: botId(), name: b.name, persona: b.persona, human: false }, this.stack));
       }
     }
 
@@ -151,9 +183,9 @@
       return MAX_SEATS - humans - this.joinQueue.length;
     }
 
-    // Новый игрок садится со следующей раздачи (если есть место).
+    // Новый игрок садится со следующей раздачи (если есть место). В идущий турнир не садятся.
     addPlayer(info) {
-      if (this.freeSeatsForHumans() <= 0) return false;
+      if (this.tournament || this.freeSeatsForHumans() <= 0) return false;
       this.joinQueue.push(info);
       this.wakeReturnWaiter();
       return true;
@@ -176,6 +208,7 @@
     }
 
     applySeatChanges() {
+      if (this.tournament) this.eliminateBusted(); // ушедший из турнира занимает место до того, как освободит стул
       const leaving = this.players.filter((p) => p.leaving);
       if (!leaving.length && !this.joinQueue.length) return;
       // Кнопка дилера остаётся у того же игрока; если он ушёл — у ближайшего оставшегося перед ним,
@@ -215,13 +248,19 @@
         for (;;) {
           this.makeRoomForHumans();
           this.applySeatChanges();
+          if (this.tournament && this.finishTournamentIfDone()) return;
           await this.waitForPlayers(gen);
           await this.playHand(gen);
           this.players.filter((p) => p.human).forEach((p) => this.hooks.onHandSettled(p, p.chips));
-          await this.settleBankruptcies(gen);
+          if (this.tournament) {
+            this.eliminateBusted();
+            if (this.finishTournamentIfDone()) return;
+          } else {
+            await this.settleBankruptcies(gen);
+          }
           if (this.cfg.autoNextMs) await this.sleep(this.cfg.autoNextMs, gen);
           else if (!this.rebought) await this.waitPending(gen, 'next');
-          this.replaceBrokeBots();
+          if (!this.tournament) this.replaceBrokeBots();
         }
       } catch (e) {
         if (e !== ABORT) this.hooks.onError(e);
@@ -249,7 +288,44 @@
     log(text, kind) { this.hooks.onLog(text, kind || ''); }
 
     // Играть можно, когда за столом хотя бы двое с фишками и не «отошедшие».
-    activeCount() { return this.players.filter((p) => p.chips > 0 && !p.sittingOut && !p.leaving).length; }
+    // В турнире отошедший остаётся в игре: блайнды платит, карты сбрасываются сами.
+    activeCount() {
+      return this.players.filter((p) => p.chips > 0 && !p.leaving && (this.tournament || !p.sittingOut)).length;
+    }
+
+    // Турнир: вылетевшие (без фишек или ушедшие) получают места с конца.
+    // Вылетевшие в одной раздаче делят места по стеку на её начало: у кого было больше — тот выше.
+    eliminateBusted() {
+      const busted = this.players.filter((p) => !p.place && (p.chips <= 0 || p.leaving));
+      if (!busted.length) return;
+      const alive = this.players.filter((p) => !p.place && !busted.includes(p)).length;
+      busted.sort((a, b) => b.startChips - a.startChips);
+      busted.forEach((p, k) => {
+        p.place = alive + k + 1;
+        p.leaving = true;
+        this.standings.push({ id: p.id, name: p.name, human: p.human, place: p.place });
+        this.log(`${p.name} выбывает — ${p.place} место`, 'sys');
+        this.hooks.onEliminated(p, p.place);
+      });
+    }
+
+    // Остался один — турнир окончен. true — играть больше не нужно.
+    finishTournamentIfDone() {
+      if (this.finished) return true;
+      const alive = this.players.filter((p) => !p.place);
+      if (alive.length > 1) return false;
+      this.finished = true;
+      const winner = alive[0] || null;
+      if (winner) {
+        winner.place = 1;
+        this.standings.push({ id: winner.id, name: winner.name, human: winner.human, place: 1 });
+        this.log(`${winner.name} выигрывает турнир`, 'win');
+      }
+      this.emit();
+      const standings = this.standings.slice().sort((a, b) => a.place - b.place);
+      this.hooks.onTournamentEnd({ winner: winner ? { id: winner.id, name: winner.name, human: winner.human } : null, standings });
+      return true;
+    }
 
     async waitForPlayers(gen) {
       while (this.activeCount() < 2) {
@@ -291,7 +367,7 @@
         this.log(`${p.name} уходит без фишек. За стол садится ${pick.name}`, 'sys');
         seated.delete(p.name);
         seated.add(pick.name);
-        Object.assign(p, { id: botId(), name: pick.name, persona: pick.persona, chips: this.cfg.stack, newcomer: true });
+        Object.assign(p, { id: botId(), name: pick.name, persona: pick.persona, chips: this.stack, newcomer: true });
       }
     }
 
@@ -314,6 +390,8 @@
       const stackTo = p.bet + p.chips;
       const othersCanAct = this.players.some((o) => o !== p && !o.folded && !o.out && !o.allIn);
       const canRaise = othersCanAct && p.chips > toCallFull;
+      // AoF: ставка бывает только одна — на весь стек.
+      if (this.aof) return { toCall: Math.min(toCallFull, p.chips), toCallFull, potAll, minTo: stackTo, maxTo: stackTo, canRaise, stackTo, aof: true };
       let minTo = Math.min(this.maxBet + this.minRaise, stackTo);
       let maxTo = this.potLimit ? Math.min(stackTo, this.maxBet + potAll + toCallFull) : stackTo;
       if (maxTo < minTo) maxTo = minTo;
@@ -322,7 +400,8 @@
 
     resetForHand() {
       for (const p of this.players) {
-        p.out = p.chips <= 0 || p.sittingOut || p.leaving;
+        p.out = p.chips <= 0 || p.leaving || (p.sittingOut && !this.tournament);
+        p.startChips = p.chips;
         let note = '';
         if (p.sittingOut) note = 'Отошёл';
         else if (p.out) note = 'Без фишек';
@@ -340,20 +419,23 @@
       this.toAct = -1;
     }
 
-    // Сколько раздач (включая текущую) осталось до роста блайндов; null — роста не будет.
+    // Сколько раздач (включая текущую) осталось до роста блайндов; null — роста не будет (кэш-стол).
     handsLeftAtLevel() {
-      if (!this.cfg.blindUp || this.level >= LEVELS.length - 1 || !this.handNo) return null;
-      return HANDS_PER_LEVEL - ((this.handNo - 1) % HANDS_PER_LEVEL);
+      if (!this.tournament || this.level >= TOURNEY_LEVELS.length - 1 || !this.handNo) return null;
+      return TOURNEY_HANDS_PER_LEVEL - ((this.handNo - 1) % TOURNEY_HANDS_PER_LEVEL);
     }
 
+    // Блайнды растут только в турнире — за кэш-столом они всегда сотая часть взноса.
     raiseBlindsIfDue() {
-      const due = this.cfg.blindUp && this.handNo > 1 && (this.handNo - 1) % HANDS_PER_LEVEL === 0;
-      if (due && this.level < LEVELS.length - 1) {
-        this.level++;
-        const [sb, bb] = LEVELS[this.level];
-        this.log(`Блайнды выросли: ${fmt(sb)} / ${fmt(bb)}`, 'sys');
+      if (this.tournament) {
+        const due = this.handNo > 1 && (this.handNo - 1) % TOURNEY_HANDS_PER_LEVEL === 0;
+        if (due && this.level < TOURNEY_LEVELS.length - 1) {
+          this.level++;
+          const [sb, bb] = TOURNEY_LEVELS[this.level];
+          this.log(`Блайнды выросли: ${fmt(sb)} / ${fmt(bb)}`, 'sys');
+        }
+        [this.sb, this.bb] = TOURNEY_LEVELS[this.level];
       }
-      [this.sb, this.bb] = LEVELS[this.level];
       this.minRaise = this.bb;
     }
 
@@ -362,7 +444,7 @@
       this.handNo++;
       this.raiseBlindsIfDue();
       this.resetForHand();
-      this.players.forEach((p) => { if (p.sittingOut) p.owesBB = true; });
+      if (!this.tournament) this.players.forEach((p) => { if (p.sittingOut) p.owesBB = true; });
       this.dealer = this.nextSeated(this.dealer);
       this.deck = C.shuffle(C.makeDeck(this.mode));
       this.hooks.onNewHand();
@@ -389,15 +471,34 @@
         } while (i !== sbIdx);
       }
 
+      // AoF Омаха: решение принимают, уже видя флоп.
+      if (this.mode === 'aofomaha') await this.revealFlop(gen);
+
       for (const street of STREETS) {
         if (this.liveCount() <= 1) break;
-        if (street !== 'preflop') await this.dealStreet(street, gen);
+        if (street !== 'preflop' && !(street === 'flop' && this.board.length >= 3)) await this.dealStreet(street, gen);
+        // AoF: торговля одна (до раздачи общих карт), дальше карты открываются без ставок.
+        if (this.aof && street !== 'preflop') continue;
         const first = street === 'preflop' ? this.nextSeated(bbIdx) : this.nextSeated(this.dealer);
         await this.bettingRound(first, gen);
-        if (this.liveCount() > 1 && this.canAct().length <= 1) this.showdown = true;
+        if (this.liveCount() > 1 && (this.aof || this.canAct().length <= 1)) this.showdown = true;
       }
       this.collect();
       this.resolve();
+    }
+
+    async revealFlop(gen) {
+      const sp = this.speed;
+      await this.sleep(sp.street * 0.5, gen);
+      this.deck.pop(); // сжигаем карту
+      for (let k = 0; k < 3; k++) {
+        this.board.push(this.deck.pop());
+        this.hooks.sound('card');
+        this.emit();
+        await this.sleep(sp.deal * 1.8, gen);
+      }
+      this.street = 'flop';
+      this.log(`${STREET_NAME.flop}: ${C.cardsText(this.board)}`, 'street');
     }
 
     // Вернувшийся игрок, пропустивший большой блайнд, докладывает его на стол.
@@ -458,12 +559,14 @@
           this.toAct = idx;
           this.emit();
           let action;
+          const away = p.sittingOut; // турнир: отошедший сидит в раздаче, но решения за него автоматические
           if (p.leaving) action = { type: 'fold' };
+          else if (away) action = { type: this.limits(p).toCallFull > 0 ? 'fold' : 'check', auto: true };
           else action = (p.human ? await this.askHuman(p, gen) : await this.askBot(p, gen)) || { type: 'fold' };
           // Пока игрок думал, он мог уйти или остаться в раздаче один — тогда его действие уже ничего не меняет.
           if (!p.folded && this.liveCount() > 1) {
             this.apply(p, action);
-            if (action.auto && action.type === 'fold') this.sitOut(p);
+            if (action.auto && action.type === 'fold' && !away) this.sitOut(p);
           }
           this.toAct = -1;
           this.emit();
@@ -503,9 +606,15 @@
     apply(p, a) {
       const L = this.limits(p);
       let type = a && typeof a.type === 'string' ? a.type : 'fold';
-      if (!['fold', 'check', 'call', 'raise'].includes(type)) type = 'fold';
+      if (!['fold', 'check', 'call', 'raise', 'allin'].includes(type)) type = 'fold';
+      let target = Number(a && a.to);
+      // Олл-ин (и любое «играю» в AoF): рейз на весь стек, а если поднять уже нельзя — колл.
+      if (type === 'allin' || (this.aof && type !== 'fold' && !(type === 'check' && L.toCallFull === 0))) {
+        type = L.canRaise ? 'raise' : (L.toCallFull > 0 ? 'call' : 'check');
+        target = L.stackTo;
+      }
       if (type === 'check' && L.toCallFull > 0) type = 'call';
-      if (type === 'raise' && (!L.canRaise || !(Number(a.to) > this.maxBet))) type = L.toCallFull > 0 ? 'call' : 'check';
+      if (type === 'raise' && (!L.canRaise || !(target > this.maxBet))) type = L.toCallFull > 0 ? 'call' : 'check';
 
       if (type === 'fold') {
         p.folded = true;
@@ -520,7 +629,7 @@
         p.lastAction = p.allIn ? `Ва-банк ${fmt(p.bet)}` : `Колл ${fmt(pay)}`;
         this.hooks.sound('chip');
       } else {
-        const to = Math.max(L.minTo, Math.min(L.maxTo, Math.round(Number(a.to))));
+        const to = Math.max(L.minTo, Math.min(L.maxTo, Math.round(target)));
         const opened = this.maxBet === 0;
         const increase = to - this.maxBet;
         this.pay(p, to - p.bet);
@@ -578,6 +687,21 @@
       return list.slice().sort((a, b) => seat(a) - seat(b));
     }
 
+    // Карты, которые легли бы на стол, не закончись раздача пасами (сжигаемые карты учтены).
+    // После раздачи колода всё равно перемешивается, так что показать их можно всем.
+    undealt() {
+      const deck = this.deck ? this.deck.slice() : [];
+      const rest = [];
+      let shown = this.board.length;
+      while (shown < 5 && deck.length) {
+        deck.pop();
+        const n = shown === 0 ? 3 : 1;
+        for (let k = 0; k < n && deck.length; k++) rest.push(deck.pop());
+        shown += n;
+      }
+      return rest;
+    }
+
     resolve() {
       const live = this.players.filter((p) => !p.folded && !p.out);
       this.toAct = -1;
@@ -591,7 +715,7 @@
         this.pot = 0;
         this.hooks.sound('win');
         this.emit();
-        this.hooks.onHandEnd({ type: 'fold', winners: [w] });
+        this.hooks.onHandEnd({ type: 'fold', winners: [w], rest: this.undealt() });
         return;
       }
 
@@ -624,7 +748,14 @@
   }
 
   P.Game = Game;
-  P.LEVELS = LEVELS;
+  P.CASH_STAKES = CASH_STAKES;
+  P.AOF_STAKES = AOF_STAKES;
+  P.AOF_MODES = AOF_MODES;
+  P.stakesFor = stakesFor;
+  P.pickStake = pickStake;
+  P.blindsFor = blindsFor;
+  P.isAof = isAof;
+  P.TOURNEY = { buyIns: TOURNEY_BUY_INS, stack: TOURNEY_STACK, levels: TOURNEY_LEVELS, handsPerLevel: TOURNEY_HANDS_PER_LEVEL };
   P.TURN_MS = TURN_MS;
   P.MAX_SEATS = MAX_SEATS;
 })(window.Poker = window.Poker || {});

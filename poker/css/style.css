@@ -487,7 +487,7 @@ input[type="number"] {
 .ranks .ex .r { color: #F07A85; font-style: normal; }
 .ranks .ex .j { color: var(--brass-hi); font-style: normal; }
 body:not([data-mode="joker"]) .only-joker,
-body:not([data-mode="omaha"]) .only-omaha { display: none; }
+body:not([data-mode="omaha"]):not([data-mode="aofomaha"]) .only-omaha { display: none; }
 
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
