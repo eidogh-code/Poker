@@ -24,6 +24,7 @@
   const AFTER_HAND_MS = 2500;         // пауза, чтобы досмотреть вскрытие, прежде чем спрашивать о докупке или итогах
   const PEEK_MS = 5000;               // сколько лежат «несыгранные» карты рубашкой вверх
   const NEXT_MS = { fold: 3000, showdown: 5000, peek: 6500, peeked: 3500 }; // через сколько следующая раздача
+  const RUSH_NEXT_MS = { fold: 1500, showdown: 3500, peek: 4500, peeked: 2500 };
   const TURN_WARN_MS = 10 * 1000;     // когда таймер хода краснеет
   const TOAST_MS = 2600;
   const SWIPE_MIN_PX = 60;            // свайп двумя пальцами короче — не жест смены стола
@@ -152,6 +153,7 @@
     if (!limits) $('#a-fold-t').textContent = g.aof ? 'Фолд' : 'Пас';
     // Ход мог закончиться без нажатия кнопки (авто-чек или авто-пас по таймеру) — гасим панель.
     if (limits && g.toAct !== 0) setDockActive(false);
+    if (g.rush && !limits) $('#a-fold').disabled = !canFastFold();
     renderMine();
     renderTurnNote();
     renderSitOut();
@@ -276,7 +278,23 @@
   }
 
   // Пас доступен всегда, даже когда можно бесплатно чекнуть: так быстрее выйти из раздачи.
+  // Rush & Cash: «Пас» в любой момент раздачи — и сразу за новый стол.
+  const canFastFold = () => Boolean(game && game.rush && !game.network && !handOver
+    && game.me && game.me.hole.length && !game.me.folded && !game.me.out && !game.me.allIn && game.me.chips > 0);
+
+  function rushMove() {
+    if (!game || !game.rush || !setup) return false;
+    if (pendingStake) { const target = pendingStake; pendingStake = 0; return doSwitch(target); }
+    const chips = game.me ? game.me.chips : 0;
+    if (chips <= 0) return false; // без фишек — сначала докупка
+    P.Profile.update((p) => P.Profile.setTableChips(p, chips));
+    startGame({ ...setup, myChips: chips });
+    return true;
+  }
+
   function act(type) {
+    // Не удалось пересесть (не хватило на назначенный стол) — обычный пас за этим столом.
+    if (type === 'fold' && canFastFold() && rushMove()) return;
     if (!limits) return;
     let action = { type };
     if (limits.aof) {
@@ -317,7 +335,8 @@
     const rest = summary.type === 'fold' && summary.rest && summary.rest.length ? summary.rest : null;
     if (rest) showPeek(rest);
     // В сети следующую раздачу начинает сервер; офлайн — мы, с кнопкой «Дальше» на случай, если ждать не хочется.
-    if (!game.network) showNext(rest ? NEXT_MS.peek : NEXT_MS[summary.type] || NEXT_MS.fold);
+    const pace = game.rush ? RUSH_NEXT_MS : NEXT_MS; // в Rush & Cash темп быстрее
+    if (!game.network) showNext(rest ? pace.peek : pace[summary.type] || pace.fold);
     if (pendingStake) {
       switchTarget = pendingStake;
       pendingStake = 0;
@@ -423,6 +442,9 @@
       clearTimeout(switchTimer);
       if (doSwitch(target)) return;
     }
+    // Rush & Cash: каждая раздача — за новым столом с новыми соперниками.
+    // Отошедший игрок остаётся за столом: там идёт его отсчёт до выхода, пересадка его бы сбросила.
+    if (game && game.rush && !(game.me && game.me.sittingOut) && rushMove()) return;
     if (game) game.nextHand();
   }
 
@@ -673,7 +695,7 @@
       mode: fd.get('mode'),
       opponents: Number(fd.get('opponents')),
       speed: fd.get('speed'),
-      format: fd.get('format') === 'tournament' ? 'tournament' : 'cash',
+      format: ['tournament', 'rush'].includes(fd.get('format')) ? fd.get('format') : 'cash',
       tbuy: Number(fd.get('tbuy')) || P.TOURNEY.buyIns[0],
     };
   }
@@ -723,7 +745,8 @@
     resetTableUi();
     $('#menu').hidden = true;
     $('#table-screen').hidden = false;
-    $('#felt-mark').textContent = tournament ? `Турнир · фонд ${fmt(cfg.buyIn * players)}` : MODE_MARK[cfg.mode];
+    $('#felt-mark').textContent = tournament ? `Турнир · фонд ${fmt(cfg.buyIn * players)}`
+      : cfg.format === 'rush' ? 'Rush & Cash' : MODE_MARK[cfg.mode];
     document.body.dataset.mode = cfg.mode;
     game = new P.Game({ ...cfg, nick: profile.nick, avatar: profile.avatar }, {
       onChange: render,
@@ -732,6 +755,7 @@
       onHandEnd,
       // Турнирные фишки — не деньги: на баланс их не записываем.
       onHandSettled: (p, chips) => { if (!tournament) P.Profile.update((pr) => P.Profile.setTableChips(pr, chips)); },
+      onCashDrop: (amount) => { toast(`Cash Drop! В банке бонус ${fmt(amount)}`); P.Sound.play('chip'); },
       onBankrupt: () => onBankrupt(),
       onSitOut: () => onSitOut(),
       onEliminated: (p, place) => {
@@ -842,7 +866,7 @@
     if (P.Profile.get().balance + chips < target) { toast('Не хватает денег на этот стол'); return false; }
     P.Profile.update((p) => P.Profile.cashOut(p, chips));
     P.Profile.update((p) => P.Profile.buyIn(p, target).state);
-    startGame({ ...setup, stack: target });
+    startGame({ ...setup, stack: target, myChips: 0 }); // за новым уровнем — ровно 100 больших блайндов
     toast(`Новый стол: блайнды ${stakeLabel(target)}, с собой ${fmt(target)}`);
     return true;
   }
@@ -992,6 +1016,7 @@
       switchStake(e.code === 'PageUp' ? 1 : -1);
       return;
     }
+    if (e.code === 'KeyF' && !limits && !e.repeat && canFastFold()) { act('fold'); return; }
     if (!limits) return;
     if (inNumber) {
       if (e.code === 'Enter') { setRaise(e.target.value); act('raise'); }
@@ -999,7 +1024,7 @@
     }
     const step = Math.max(1, game.bb);
     switch (e.code) {
-      case 'KeyF': act('fold'); break;
+      case 'KeyF': act('fold'); break; // в свой ход; быстрый пас Rush & Cash — выше, до проверки хода
       case 'KeyC': act('call'); break;
       case 'KeyR': if (limits.canRaise) act('raise'); break;
       case 'ArrowUp': e.preventDefault(); setRaise(Number($('#a-range').value) + step); break;

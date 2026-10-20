@@ -44,6 +44,7 @@
   let retryTimer = 0;
   let status = 'off';
   let myId = null;
+  let replaced = false; // сессию забрало другое устройство — сами не переподключаемся, только по действию игрока
   let boot = null; // метка запуска сервера: сменилась — сервер перезапускался
 
   // Ошибка одного подписчика не должна лишать сообщений остальных.
@@ -93,7 +94,8 @@
         boot = typeof msg.boot === 'string' && /^[0-9a-f]{1,32}$/.test(msg.boot) ? msg.boot : null;
         setStatus('online');
       }
-      if (msg.t === 'replaced') wanted = false;
+      if (msg.t === 'replaced') { wanted = false; replaced = true; }
+      if (msg.t === 'welcome') replaced = false;
       emit(msg.t, msg);
     };
     sock.onclose = () => {
@@ -207,6 +209,7 @@
     connect, disconnect, send, on, serverUrl, setServerUrl, normalizeUrl,
     get status() { return status; },
     get id() { return myId; },
+    get replaced() { return replaced; },
     get boot() { return boot; },
     RemoteGame,
   };

@@ -35,6 +35,16 @@ function createServer({ ratings = new Ratings(), tourneyWaitMs, autoNextMs } = {
   const perIp = new Map();
 
   const server = http.createServer((req, res) => {
+    // Счётчик для главного экрана: сколько игроков сейчас на связи. Только число — без ников и id.
+    if (req.url === '/online') {
+      res.writeHead(200, {
+        'content-type': 'application/json; charset=utf-8',
+        'access-control-allow-origin': '*', // приложение открывает игру со своего адреса
+        'cache-control': 'no-store',
+      });
+      res.end(JSON.stringify({ online: lobby.onlineCount() }));
+      return;
+    }
     res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
     res.end(req.url === '/health' ? 'ok' : 'Сервер игры «Покер». Подключайтесь из приложения.');
   });

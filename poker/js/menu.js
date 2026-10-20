@@ -9,6 +9,8 @@
   const PHOTO_QUALITIES = [0.85, 0.7, 0.55];
   const PHOTO_NET_MAX = 22000; // сервер принимает аватар до 24000 символов base64
   const BONUS_REFRESH_MS = 30 * 1000;
+  const ONLINE_REFRESH_MS = 30 * 1000;
+  const ONLINE_TIMEOUT_MS = 8000;
 
   const FELT_NAMES = { oxblood: 'Бордо', emerald: 'Изумруд', sapphire: 'Сапфир', graphite: 'Графит', plum: 'Слива' };
   const BACK_NAMES = { lattice: 'Решётка', diamonds: 'Ромбы', deco: 'Ар-деко', classic: 'Классика', dots: 'Горох' };
@@ -101,7 +103,7 @@
 
   function renderTourneyBuyIns() {
     $('#tourney-buyins').innerHTML = P.TOURNEY.buyIns.map((v, i) => `
-      <label><input type="radio" name="tbuy" value="${v}"${i === 1 ? ' checked' : ''}><span>${fmt(v)}</span></label>`).join('');
+      <label><input type="radio" name="tbuy" value="${v}"${v === 1000 ? ' checked' : ''}><span>${fmt(v)}</span></label>`).join('');
   }
 
   function showNote(text) {
@@ -188,6 +190,9 @@
     if (!e.submitter || e.submitter.value !== 'save') return;
     const nick = Profile.sanitizeNick($('#pf-nick').value);
     Profile.update((p) => ({ ...p, nick, avatar: draftAvatar }));
+    // Ник и аватар сервер узнаёт при подключении: переподключаемся, чтобы за сетевым столом было новое имя.
+    const live = P.Net.status === 'online' || P.Net.status === 'connecting';
+    if (live && !(P.Lobby && P.Lobby.inRoom)) { P.Net.disconnect(); P.Net.connect(); }
   }
 
   /* ---------- окно «Оформление» ---------- */
@@ -211,6 +216,35 @@
     const { name, value } = e.target;
     if (name === 'look-felt') Profile.update((p) => ({ ...p, felt: value }));
     if (name === 'look-back') Profile.update((p) => ({ ...p, back: value }));
+  }
+
+  /* ---------- счётчик игроков онлайн ---------- */
+
+  // Тот же сервер, что у сетевой игры, только по HTTP(S): wss://… → https://…/online.
+  const onlineUrl = () => {
+    const ws = P.Net.serverUrl();
+    return ws ? `${ws.replace(/^ws/i, 'http')}/online` : '';
+  };
+
+  // Спрашиваем, только пока виден главный экран. Сервер спит или нет сети — счётчик просто прячется.
+  async function refreshOnline() {
+    const box = $('#online-count');
+    const url = onlineUrl();
+    if (!url) { box.hidden = true; return; }
+    if ($('#menu').hidden || document.hidden) return;
+    // Пока приложение открыто, держим лёгкое подключение — так и мы сами входим в число «онлайн».
+    // Сессию забрало другое устройство — не отбираем её обратно сами каждые 30 секунд.
+    if (!P.Net.replaced) P.Net.connect();
+    try {
+      const signal = typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(ONLINE_TIMEOUT_MS) : undefined;
+      const res = await fetch(url, { cache: 'no-store', signal });
+      const n = Number((await res.json()).online);
+      if (!res.ok || !Number.isInteger(n) || n < 0) throw new Error('bad online count');
+      $('#online-n').textContent = `Онлайн: ${fmt(n)}`;
+      box.hidden = false;
+    } catch (e) {
+      box.hidden = true;
+    }
   }
 
   /* ---------- запуск ---------- */
@@ -240,7 +274,12 @@
     $('#profile-form').addEventListener('submit', onProfileSubmit);
     $('#look-form').addEventListener('change', onLookChanged);
     setInterval(renderBonus, BONUS_REFRESH_MS);
+    refreshOnline();
+    setInterval(refreshOnline, ONLINE_REFRESH_MS);
+    // Только что подключились — пересчитать сразу, чтобы в числе был и этот игрок.
+    P.Net.on('welcome', () => refreshOnline());
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshOnline(); });
   }
 
-  P.Menu = { init, refresh: renderProfile, avatarMarkup, escapeHTML, showNote, claimBonus, syncBuyIns };
+  P.Menu = { init, refresh: () => { renderProfile(); refreshOnline(); }, avatarMarkup, escapeHTML, showNote, claimBonus, syncBuyIns };
 })(window.Poker = window.Poker || {});

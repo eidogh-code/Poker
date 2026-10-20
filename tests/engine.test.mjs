@@ -127,6 +127,40 @@ test('сбросили после флопа — видны оставшиеся
 test('стол «по максимуму»: самый дорогой, на который хватает денег', () => {
   assert.equal(P.pickStake('holdem', 10000), 10000);
   assert.equal(P.pickStake('holdem', 9999), 5000);
-  assert.equal(P.pickStake('holdem', 499), 0);
-  assert.equal(P.pickStake('aof', 1e9), 5000, 'у AoF своя лестница — до 5 000');
+  assert.equal(P.pickStake('holdem', 499), 200);
+  assert.equal(P.pickStake('holdem', 199), 0);
+  assert.equal(P.pickStake('aof', 1e9), 50000, 'у AoF своя лестница — до 50 000');
+  assert.ok(P.CASH_STAKES.length >= 15, 'столов много');
+});
+
+test('Rush & Cash: стеки новых соперников разные, в пределах половины–полутора взносов', () => {
+  const stacks = new Set();
+  for (let i = 0; i < 20; i++) {
+    const g = new P.Game({ mode: 'holdem', format: 'rush', stack: 1000, opponents: 5, speed: 'fast', nick: 'Я' }, quietHooks());
+    g.start();
+    g.players.filter((p) => !p.human).forEach((p) => stacks.add(p.chips));
+    g.stop();
+  }
+  assert.ok(stacks.size > 3, 'стеки отличаются');
+  assert.ok([...stacks].every((c) => c >= 500 && c <= 1500 && c % 10 === 0), `стеки вне диапазона: ${[...stacks]}`);
+});
+
+test('Rush & Cash: стек игрока переносится на новый стол', () => {
+  const g = new P.Game({ mode: 'holdem', format: 'rush', stack: 1000, myChips: 1730, opponents: 2, speed: 'fast', nick: 'Я' }, quietHooks());
+  g.start();
+  assert.equal(g.me.chips, 1730);
+  g.stop();
+});
+
+test('Cash Drop: бонус попадает в банк и достаётся победителю — фишек больше ровно на бонус', async () => {
+  const realRandom = Math.random;
+  let gained = 0;
+  try {
+    Math.random = () => 0.01; // меньше шанса Cash Drop — бонус выпадет наверняка
+    const { players } = await playOneHand({ mode: 'holdem', format: 'rush', stack: 1000 }, () => ({ type: 'fold' }));
+    gained = players.reduce((s, p) => s + p.chips, 0) - 2000;
+  } finally {
+    Math.random = realRandom;
+  }
+  assert.equal(gained, 10 * P.blindsFor(1000)[1]);
 });

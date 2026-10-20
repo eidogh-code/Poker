@@ -155,10 +155,10 @@ test('взнос задаёт блайнды (1000 → 5/10) без роста; 
   assert.ok(!('level' in room) && !('blindUp' in room), 'старых настроек уровня больше нет');
 
   const b = await client('Кира');
-  b.send({ t: 'create', settings: { visibility: 'closed', mode: 'aof', buyIn: 10000 } });
+  b.send({ t: 'create', settings: { visibility: 'closed', mode: 'aof', buyIn: 7000 } });
   const aof = (await b.next(roomMsg)).room;
   assert.equal(aof.mode, 'aof');
-  assert.equal(aof.buyIn, 1000, 'AoF: взноса 10 000 нет в лестнице — взят взнос по умолчанию');
+  assert.equal(aof.buyIn, 1000, 'AoF: взноса 7 000 нет в лестнице — взят взнос по умолчанию');
 
   const c = await client('Лена');
   c.send({ t: 'create', settings: { visibility: 'closed', mode: 'omaha', buyIn: 500000 } });
@@ -243,4 +243,18 @@ test('уборка не удаляет сессию с недоставленн�
   keep.lastSeen = Date.now() - 25 * 60 * 60 * 1000;
   lobby.sweep(10 * 60 * 1000);
   assert.ok(!lobby.sessions.has(keep.key), 'но не дольше суток');
+});
+
+test('счётчик онлайна: только число игроков на связи, доступен приложению с другого адреса', async () => {
+  const get = async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/online`);
+    assert.equal(res.headers.get('access-control-allow-origin'), '*');
+    return (await res.json()).online;
+  };
+  const before = await get();
+  const a = await client('Онлайн');
+  assert.equal(await get(), before + 1);
+  a.close();
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(await get(), before, 'отключившийся не считается');
 });

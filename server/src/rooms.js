@@ -480,6 +480,13 @@ class Lobby {
 
   roomOf(session) { return session.roomCode ? this.rooms.get(session.roomCode) || null : null; }
 
+  // Игроки на связи: представившиеся сессии с открытым соединением (одно устройство — один игрок).
+  onlineCount() {
+    let n = 0;
+    for (const s of this.sessions.values()) if (s.ws && s.ws.readyState === 1) n++;
+    return n;
+  }
+
   // Открытые комнаты в списке; закрытые и турнирные находятся только по коду.
   list() {
     return [...this.rooms.values()]

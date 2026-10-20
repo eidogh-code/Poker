@@ -8,11 +8,17 @@
 
   const C = P.Cards;
   // Кэш: за стол садятся ровно со 100 большими блайндами, поэтому блайнды определяет взнос.
-  const CASH_STAKES = [500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000];
-  const AOF_STAKES = [1000, 2000, 5000];
+  const CASH_STAKES = [200, 500, 1000, 2000, 3000, 5000, 10000, 15000, 20000, 30000, 50000,
+    100000, 200000, 300000, 500000, 1000000];
+  const AOF_STAKES = [200, 500, 1000, 2000, 3000, 5000, 10000, 20000, 50000];
+  // Rush & Cash: стеки новых соперников разные (от половины до полутора взносов),
+  // а изредка в банк падает бонус «Cash Drop» — CASH_DROP_BB больших блайндов от заведения.
+  const RUSH_STACK_SPREAD = [0.5, 1.5];
+  const CASH_DROP_CHANCE = 1 / 12;
+  const CASH_DROP_BB = 10;
   const BIG_BLINDS_PER_BUYIN = 100;
   // Турнир: у всех одинаковый стартовый стек, блайнды растут каждые TOURNEY_HANDS_PER_LEVEL раздач.
-  const TOURNEY_BUY_INS = [500, 1000, 2000, 5000, 10000];
+  const TOURNEY_BUY_INS = [200, 500, 1000, 2000, 5000, 10000, 25000, 50000];
   const TOURNEY_STACK = 1500;
   const TOURNEY_LEVELS = [[10, 20], [15, 30], [25, 50], [50, 100], [75, 150], [100, 200], [150, 300], [200, 400],
     [300, 600], [400, 800], [600, 1200], [800, 1600], [1000, 2000], [1500, 3000], [2000, 4000], [3000, 6000], [5000, 10000]];
@@ -76,7 +82,7 @@
   class Game {
     constructor(cfg, hooks) {
       this.cfg = cfg;
-      this.hooks = Object.assign({ onEliminated: noop, onTournamentEnd: noop }, hooks);
+      this.hooks = Object.assign({ onEliminated: noop, onTournamentEnd: noop, onCashDrop: noop }, hooks);
       this.gen = 0;
       this.pending = null;
       this.pendingKind = null;
@@ -104,10 +110,13 @@
       this.potLimit = cfg.mode === 'omaha';
       // Стек ботов и офлайн-игрока: в турнире стартовый турнирный, за кэш-столом — взнос.
       this.stack = this.tournament ? TOURNEY_STACK : cfg.stack;
+      this.rush = cfg.format === 'rush';
+      this.cashDrop = 0;
       this.standings = [];
       this.finished = false;
       // cfg.players — люди за столом (сеть); без него — один офлайн-игрок с ником из профиля.
-      const humans = cfg.players || [{ id: 'me', name: cfg.nick, avatar: cfg.avatar, human: true, chips: this.stack }];
+      // myChips — стек, с которым игрок пересаживается за новый стол в Rush & Cash.
+      const humans = cfg.players || [{ id: 'me', name: cfg.nick, avatar: cfg.avatar, human: true, chips: cfg.myChips || this.stack }];
       this.players = humans.map((h) => freshSeat({ id: h.id, name: h.name, avatar: h.avatar, human: true }, h.chips));
       const botCount = cfg.players ? (cfg.bots ? Math.max(0, cfg.opponents + 1 - this.players.length) : 0) : cfg.opponents;
       this.addBots(botCount);
@@ -127,14 +136,24 @@
 
     addBots(count) {
       const seated = new Set(this.players.map((p) => p.name));
-      const free = ROSTER.filter((b) => !seated.has(b.name));
+      // В Rush & Cash за каждым новым столом — случайные соперники из всей дюжины.
+      const pool = ROSTER.filter((b) => !seated.has(b.name));
+      const free = this.rush ? C.shuffle(pool) : pool;
       for (let i = 0; i < count && this.players.length < MAX_SEATS; i++) {
         const b = free[i] || ROSTER[C.randInt(ROSTER.length)];
-        this.players.push(freshSeat({ id: botId(), name: b.name, persona: b.persona, human: false }, this.stack));
+        this.players.push(freshSeat({ id: botId(), name: b.name, persona: b.persona, human: false }, this.botStack()));
       }
     }
 
     retone() { this.players.forEach((p, i) => { p.tone = i; }); }
+
+    // Стек нового бота: в Rush & Cash за каждым новым столом разные, иначе — ровно взнос.
+    botStack() {
+      if (!this.rush) return this.stack;
+      const [lo, hi] = RUSH_STACK_SPREAD;
+      const bb = this.bb || blindsFor(this.stack)[1];
+      return Math.max(bb * 10, Math.round((this.stack * (lo + Math.random() * (hi - lo))) / bb) * bb);
+    }
 
     stop() {
       this.gen++;
@@ -367,7 +386,7 @@
         this.log(`${p.name} уходит без фишек. За стол садится ${pick.name}`, 'sys');
         seated.delete(p.name);
         seated.add(pick.name);
-        Object.assign(p, { id: botId(), name: pick.name, persona: pick.persona, chips: this.stack, newcomer: true });
+        Object.assign(p, { id: botId(), name: pick.name, persona: pick.persona, chips: this.botStack(), newcomer: true });
       }
     }
 
@@ -457,6 +476,7 @@
       this.post(bbIdx, this.bb, 'Большой блайнд');
       this.maxBet = this.bb;
       this.payMissedBlinds(sbIdx, bbIdx);
+      this.maybeCashDrop();
       this.hooks.sound('chip');
       this.emit();
 
@@ -499,6 +519,16 @@
       }
       this.street = 'flop';
       this.log(`${STREET_NAME.flop}: ${C.cardsText(this.board)}`, 'street');
+    }
+
+    // Rush & Cash: изредка заведение докладывает в банк бонус — его забирает победитель раздачи.
+    maybeCashDrop() {
+      this.cashDrop = 0;
+      if (!this.rush || Math.random() >= CASH_DROP_CHANCE) return;
+      this.cashDrop = this.bb * CASH_DROP_BB;
+      this.pot += this.cashDrop;
+      this.log(`Cash Drop: в банке бонус ${fmt(this.cashDrop)}`, 'win');
+      this.hooks.onCashDrop(this.cashDrop);
     }
 
     // Вернувшийся игрок, пропустивший большой блайнд, докладывает его на стол.
@@ -676,7 +706,8 @@
         prev = lv;
       }
       const counted = pots.reduce((s, x) => s + x.amount, 0);
-      if (pots.length && counted < this.pot) pots[pots.length - 1].amount += this.pot - counted;
+      // Деньги сверх ставок (бонус Cash Drop) идут в основной банк — на него претендуют все, кто дошёл до вскрытия.
+      if (pots.length && counted < this.pot) pots[0].amount += this.pot - counted;
       return pots;
     }
 

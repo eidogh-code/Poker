@@ -58,9 +58,10 @@
   function backToMenu() {
     if (state.room) { leaveRoom(); return; }
     clearInterval(state.listTimer);
+    if (state.queue || state.queueWanted) P.Net.send({ t: 'unqueue' }); // в том числе если ответ сервера ещё не пришёл
     setQueue(null);
     state.queueWanted = null;
-    P.Net.disconnect();
+    // Соединение не рвём: пока приложение открыто, игрок считается в счётчике «Онлайн» на главном экране.
     $('#lobby').hidden = true;
     $('#menu').hidden = false;
     P.Menu.refresh();

@@ -74,9 +74,9 @@
 .profile-actions .btn { padding: 8px 14px; font-size: 14px; }
 .setup-note { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: rgba(210, 169, 86, .12); color: var(--brass-hi); font-size: 14px; line-height: 1.4; }
 
-/* ---------- 4 режима ---------- */
-.modes { grid-template-columns: 1fr 1fr; }
-.mode { grid-template-columns: 56px 1fr; gap: 12px; }
+/* ---------- шесть игр: две колонки ---------- */
+.modes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.mode { grid-template-columns: 56px minmax(0, 1fr); gap: 12px; min-width: 0; }
 .mode-art { scale: .85; }
 .mode strong { font-size: 24px; }
 .mini.six { background: var(--ivory); color: var(--ink); font-family: var(--font-display); font-weight: 800; font-size: 16px; }
@@ -99,7 +99,10 @@ body:not([data-mode="short"]) .only-short { display: none; }
 
 /* ---------- окна «Профиль» и «Оформление» ---------- */
 .sheet {
-  width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 32px);
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px);
+  /* Содержимое выше экрана прокручивается внутри окна — кнопки внизу всегда достижимы. */
+  overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
   padding: 0; border: 1px solid var(--line); border-radius: 20px;
   background: linear-gradient(180deg, #3A2218, #1E1018); color: var(--text);
   box-shadow: 0 30px 80px rgba(0, 0, 0, .6);
@@ -134,9 +137,9 @@ body:not([data-mode="short"]) .only-short { display: none; }
 .swatch-felt { width: 54px; height: 34px; border-radius: 999px; background: radial-gradient(ellipse at 50% 40%, var(--felt-hi), var(--felt) 60%, var(--felt-lo)); box-shadow: inset 0 0 0 3px #3A2418, inset 0 0 0 4px var(--brass-lo); }
 .swatch-back .card { --cw: 30px; display: block; }
 
-/* ---------- телефон: всё помещается без прокрутки ---------- */
+/* ---------- телефон боком: плотная вёрстка; что не влезло — прокручивается ---------- */
 @media (max-height: 560px) {
-  .menu { overflow: hidden; }
+  .menu { overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; }
   .lede { display: none; }
   .title { font-size: clamp(48px, 13vh, 88px); }
   .profile-box { margin-top: 10px; gap: 8px; }
@@ -147,9 +150,15 @@ body:not([data-mode="short"]) .only-short { display: none; }
   .chip-edit { display: none; }
   .profile-actions { gap: 6px; }
   .profile-actions .btn { min-height: 34px; padding: 4px 10px; font-size: 12px; }
-  .modes { grid-template-columns: repeat(4, 1fr); }
-  .mode { grid-template-columns: 1fr; }
-  .mode strong { font-size: 16px; }
+  /* Шесть игр — 3×2, картинка слева от названия: так карточка ниже, а название шире. */
+  .modes { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mode {
+    grid-template-columns: 26px minmax(0, 1fr); justify-items: start; text-align: left;
+    gap: 6px; min-height: 40px; padding: 4px 8px 4px 5px;
+  }
+  .mode-art { justify-self: stretch; scale: .55; height: 28px; }
+  .mode-art.four { scale: .5; }
+  .mode strong { font-size: clamp(15px, 2.4vw, 18px); }
   .setup-note { margin-bottom: 6px; padding: 5px 8px; font-size: 12px; }
 
   .sheet-body { padding: 12px 16px; gap: 8px; }
@@ -171,10 +180,9 @@ body:not([data-mode="short"]) .only-short { display: none; }
   .turn-timer { height: 5px; }
 }
 
-/* Совсем низкие экраны (около 320px): убираем картинки режимов и ужимаем отступы. */
+/* Совсем низкие экраны (360px и ниже): ужимаем отступы и высоту строк. */
 @media (max-height: 380px) {
-  .mode-art { display: none; }
-  .mode { padding: 8px 4px; }
+  .mode { min-height: 36px; padding: 3px 8px 3px 5px; }
   .opt { padding: 3px 0; }
   .seg span { min-height: 28px; padding: 1px 8px; }
   .start { min-height: 36px; }

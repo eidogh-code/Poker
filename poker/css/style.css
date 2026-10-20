@@ -145,6 +145,31 @@ kbd {
 }
 .lede { max-width: 36ch; margin: 22px 0 0; color: var(--muted); font-size: 18px; line-height: 1.55; }
 
+/* Счётчик игроков онлайн: латунная плашка с зелёной «живой» точкой. */
+.online-count {
+  display: inline-flex; align-items: center; gap: 8px;
+  width: fit-content; margin: 16px 0 0;
+  padding: 4px 12px 4px 10px; border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, .24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .04);
+  color: var(--text); font-size: 13px; font-weight: 700; line-height: 1.3;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.online-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex: none;
+  background: #7FD9A0;
+  box-shadow: 0 0 0 0 rgba(127, 217, 160, .5);
+  animation: online-pulse 2.4s ease-out infinite;
+}
+@keyframes online-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(127, 217, 160, .5); }
+  70%, 100% { box-shadow: 0 0 0 6px rgba(127, 217, 160, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .online-dot { animation: none; }
+}
+
 .menu-panel {
   background: linear-gradient(180deg, rgba(58, 34, 24, .7), rgba(30, 16, 24, .92));
   border: 1px solid var(--line);
@@ -169,7 +194,14 @@ kbd {
 .mode input { position: absolute; opacity: 0; pointer-events: none; }
 .mode:has(input:checked) { border-color: var(--brass); background: rgba(210, 169, 86, .1); }
 .mode:has(input:focus-visible) { outline: 2px solid var(--brass-hi); outline-offset: 3px; }
-.mode strong { display: block; font-family: var(--font-display); font-size: 27px; font-weight: 700; line-height: 1.05; }
+.mode-text { min-width: 0; }
+/* Название игры — всегда в одну строку; многоточие — лишь страховка на совсем узких экранах.
+   Отступ снизу компенсирован, чтобы обрезка не съедала хвосты «д» и «у». */
+.mode strong {
+  display: block; font-family: var(--font-display); font-size: 27px; font-weight: 700; line-height: 1.05;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  padding-bottom: .12em; margin-bottom: -.12em;
+}
 .mode .d { display: block; margin-top: 4px; color: var(--muted); font-size: 14px; line-height: 1.45; }
 .mode-art { display: flex; justify-content: center; }
 .mini {
@@ -220,7 +252,13 @@ kbd {
 .app-shell input[type="number"] { user-select: text; }
 
 /* ---------- экран стола ---------- */
-.table-screen { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+/* Экран стола — во всю высоту; если панели не оставляют столу минимума (очень низкий экран,
+   открытая докупка), экран прокручивается, а не обрезает кнопки действий. */
+.table-screen {
+  height: 100vh; height: 100dvh;
+  display: grid; grid-template-rows: auto minmax(160px, 1fr) auto;
+  overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain;
+}
 .topbar {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
   padding: 12px 20px;
@@ -546,7 +584,7 @@ body:not([data-mode="omaha"]):not([data-mode="aofomaha"]) .only-omaha { display:
   body { overflow: hidden; }
 
   .menu {
-    height: 100vh; overflow: auto;
+    height: 100vh; height: 100dvh; overflow: auto;
     grid-template-columns: minmax(0, .55fr) minmax(0, 1.45fr);
     align-items: center; gap: 16px;
     padding: 10px 16px;

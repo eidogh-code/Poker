@@ -1,6 +1,12 @@
 /* Телефон вертикально: высокий стол, панель действий в несколько строк, меню в одну колонку.
    Подключается последним, после style.css и extras.css. Альбомная вёрстка этим файлом не меняется. */
 
+/* Значки звука и музыки для верхней панели стола: ими пользуются портрет и низкий альбом (table-flow.css). */
+.tools #btn-sound { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 9h4l5-4v14l-5-4H3z'/%3E%3Cpath d='M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"); }
+.tools #btn-sound[aria-pressed="false"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 9h4l5-4v14l-5-4H3z'/%3E%3Cpath d='M16 9l6 6M22 9l-6 6' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"); }
+.tools [data-music-toggle] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 17.5V5.5l11-2.5v12' fill='none' stroke='%23000' stroke-width='2' stroke-linejoin='round'/%3E%3Ccircle cx='6.5' cy='17.5' r='3'/%3E%3Ccircle cx='17.5' cy='15' r='3'/%3E%3C/svg%3E"); }
+.tools [data-music-toggle][aria-pressed="false"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 17.5V5.5l11-2.5v12' fill='none' stroke='%23000' stroke-width='2' stroke-linejoin='round'/%3E%3Ccircle cx='6.5' cy='17.5' r='3'/%3E%3Ccircle cx='17.5' cy='15' r='3'/%3E%3Cpath d='M3 3l18 18' stroke='%23000' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E"); }
+
 @media (orientation: portrait) {
   :root {
     /* Размеры карт: от ширины экрана, но не выше доли высоты — чтобы стол влезал на коротких телефонах. */
@@ -12,20 +18,29 @@
 
   body { overflow: hidden; }
 
-  /* ---------- главное меню: одна колонка, без прокрутки на 360×740 ---------- */
+  /* ---------- главное меню: одна колонка; не влезает по высоте — прокручивается ---------- */
+  /* Центрирование — авто-отступами, а не justify-content: center: при переполнении flex с center
+     уводит верх содержимого за край, и до кнопок профиля уже не долистать. */
   .menu {
-    display: flex; flex-direction: column; justify-content: center; gap: 12px;
-    height: 100vh; height: 100dvh; min-height: 0; overflow: auto;
+    display: flex; flex-direction: column; justify-content: flex-start; gap: 12px;
+    height: 100vh; height: 100dvh; min-height: 0;
+    overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain;
     width: 100%; max-width: 560px; margin: 0 auto;
-    padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+    padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+      max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
   }
+  .menu > :first-child { margin-top: auto; }
+  .menu > :last-child { margin-bottom: auto; }
+  .menu > * { flex: none; }
+  /* Между строками героя — отступы у самих строк: скрытая подводка или счётчик не оставляют пустой зазор. */
   .menu-hero {
     display: grid; grid-template-columns: auto minmax(0, 1fr);
-    align-items: center; column-gap: 14px; row-gap: 8px;
+    align-items: center; column-gap: 14px; row-gap: 0;
   }
   .hero-fan { display: none; }
-  .title { grid-column: 1; grid-row: 1; font-size: clamp(58px, 17vw, 96px); }
-  .lede { grid-column: 1 / -1; grid-row: 2; max-width: none; margin: 0; font-size: 14px; line-height: 1.45; }
+  .title { grid-column: 1; grid-row: 1; font-size: clamp(54px, 17vw, 96px); }
+  .online-count { grid-column: 1 / -1; grid-row: 2; justify-self: start; margin-top: 8px; }
+  .lede { grid-column: 1 / -1; grid-row: 3; max-width: none; margin: 8px 0 0; font-size: 14px; line-height: 1.45; }
   .profile-box { display: contents; }
   .profile-chip { grid-column: 2; grid-row: 1; min-width: 0; min-height: 52px; padding: 5px 12px 5px 5px; gap: 10px; }
   .profile-chip .avatar { width: 40px; height: 40px; font-size: 20px; }
@@ -33,32 +48,39 @@
   .profile-chip .pname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .profile-chip .pchips { font-size: 19px; white-space: nowrap; }
   .chip-edit { display: none; }
-  .profile-actions { grid-column: 1 / -1; grid-row: 3; display: flex; flex-wrap: wrap; gap: 6px; }
-  .profile-actions .btn { flex: 1 1 auto; min-height: 44px; padding: 6px 10px; font-size: 13px; }
+  .profile-actions { grid-column: 1 / -1; grid-row: 4; margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .profile-actions .btn { flex: 1 1 auto; min-height: 44px; padding: 6px 10px; font-size: 13px; white-space: nowrap; }
 
   .menu-panel { padding: 12px; border-radius: 20px; }
-  .modes { grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+  .modes { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 6px; }
   .modes legend { display: none; }
-  .mode { grid-template-columns: 34px minmax(0, 1fr); gap: 8px; min-height: 52px; padding: 6px 10px 6px 6px; border-radius: 12px; }
+  .mode { grid-template-columns: 34px minmax(0, 1fr); gap: 8px; min-width: 0; min-height: 52px; padding: 6px 10px 6px 6px; border-radius: 12px; }
   .mode-art { scale: .62; height: 30px; align-items: center; }
   .mode strong { font-size: 21px; }
   .mode .d { display: none; }
   .opts { margin-bottom: 10px; }
   .opt { grid-template-columns: 74px minmax(0, 1fr); gap: 8px; padding: 5px 0; }
   .opt-name { font-size: 12px; line-height: 1.25; }
-  .seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; }
+  /* Варианты — по ширине подписи, остаток делится поровну; не влезли в строку — переносятся целиком,
+     а не сжимаются до наложения слов. */
+  .seg { display: flex; flex-wrap: wrap; gap: 4px; }
+  .seg > label { flex: 1 1 auto; display: flex; min-width: 0; }
   .seg span {
-    display: flex; justify-content: center; text-align: center;
-    min-height: 40px; padding: 2px 4px;
-    font-size: 13px; line-height: 1.15;
+    flex: 1 1 auto; justify-content: center; text-align: center;
+    min-height: 40px; padding: 2px 8px;
+    font-size: 13px; line-height: 1.15; white-space: nowrap;
   }
+  .table-pick { font-size: 12.5px; line-height: 1.4; }
+  /* «Стол» над пояснением ничего не добавляет («Блайнды 50 / 100, с собой…»), а строку съедает. */
+  .opt.cash-only > .opt-name { display: none; }
+  .opt.cash-only .table-pick:first-of-type { margin-top: 0; }
   .setup-note { margin-bottom: 8px; font-size: 13px; }
   .start { min-height: 52px; padding: 10px; font-size: 18px; }
   .start-row { gap: 8px; }
   .start-row .btn { min-height: 52px; padding: 8px 6px; font-size: 16px; line-height: 1.15; }
 
   /* ---------- экран стола ---------- */
-  .table-screen { height: 100vh; height: 100dvh; grid-template-rows: auto minmax(0, 1fr) auto; }
+  .table-screen { height: 100vh; height: 100dvh; grid-template-rows: auto minmax(min(240px, 42dvh), 1fr) auto; }
 
   /* Верхняя панель: кнопки в строку (сколько бы их ни было), под ними — игра, блайнды и номер раздачи. */
   .topbar {
@@ -93,10 +115,6 @@
     background-color: currentColor;
     -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat;
   }
-  .tools #btn-sound { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 9h4l5-4v14l-5-4H3z'/%3E%3Cpath d='M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"); }
-  .tools #btn-sound[aria-pressed="false"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M3 9h4l5-4v14l-5-4H3z'/%3E%3Cpath d='M16 9l6 6M22 9l-6 6' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"); }
-  .tools [data-music-toggle] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 17.5V5.5l11-2.5v12' fill='none' stroke='%23000' stroke-width='2' stroke-linejoin='round'/%3E%3Ccircle cx='6.5' cy='17.5' r='3'/%3E%3Ccircle cx='17.5' cy='15' r='3'/%3E%3C/svg%3E"); }
-  .tools [data-music-toggle][aria-pressed="false"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 17.5V5.5l11-2.5v12' fill='none' stroke='%23000' stroke-width='2' stroke-linejoin='round'/%3E%3Ccircle cx='6.5' cy='17.5' r='3'/%3E%3Ccircle cx='17.5' cy='15' r='3'/%3E%3Cpath d='M3 3l18 18' stroke='%23000' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E"); }
 
   .meta {
     order: 1; flex: 1 0 100%;
@@ -294,7 +312,33 @@
     --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20 12H5M11 5l-7 7 7 7' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   }
   .meta { column-gap: 10px; }
-  .seg span { font-size: 12px; }
+  .seg span { font-size: 12px; padding: 2px 6px; }
+
+  /* Карточки игр: картинка мельче, шрифт названия тянется по ширине экрана — «С джокерами»
+     и «AoF Холдем» остаются в одну строку от 400 до 320px (Honor 70 с крупным «размером экрана»). */
+  .mode { grid-template-columns: 26px minmax(0, 1fr); gap: 6px; padding: 6px 6px 6px 5px; }
+  .mode-art { scale: .55; }
+  .mode-art.four { scale: .5; }
+  .mode strong { font-size: clamp(16px, calc(11vw - 18px), 21px); letter-spacing: -.005em; }
+}
+
+/* Совсем узкие портретные экраны: подпись опции — над вариантами, чтобы три варианта темпа
+   и формата стояли в одну строку; верхняя панель стола — плотнее, чтобы не переносилась. */
+@media (orientation: portrait) and (max-width: 349px) {
+  .opt { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 6px 0; }
+  .topbar { column-gap: 2px; }
+  .topbar > .btn, .tools .btn { font-size: 11px; padding: 2px; }
+  .tools #btn-odds::before { font-size: 11px; }
+  #btn-menu, .tools #btn-sound, .tools [data-music-toggle] { min-width: 36px; padding: 2px 6px; }
+  .meta { column-gap: 8px; }
+  .meta dd { font-size: 17px; }
+  /* «Раздача 12» → «№ 12»: подпись остаётся для скринридера, строка не переносится и с «AoF Холдем». */
+  .meta div:nth-child(3) dt {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  #m-hand::before { content: '№\00a0'; content: '№\00a0' / ''; font-size: .8em; color: var(--muted); }
+  .start-row .btn { padding-inline: 4px; font-size: 14px; }
 }
 
 /* Короткие портретные экраны: подводка в меню прячется, чтобы форма влезала без прокрутки. */

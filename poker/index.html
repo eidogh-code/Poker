@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Покер</title>
   <link rel="stylesheet" href="css/fonts.css">
   <link rel="stylesheet" href="css/style.css">
@@ -26,6 +26,7 @@
       </div>
       <h1 class="title">Покер</h1>
       <p class="lede">Кэш-стол на шестерых против ботов с характером. Садитесь с фишками из баланса, уходите — забираете остаток.</p>
+      <p class="online-count" id="online-count" role="status" hidden><i class="online-dot" aria-hidden="true"></i><span id="online-n"></span></p>
 
       <div class="profile-box">
         <button class="profile-chip" id="btn-profile" type="button" aria-label="Профиль: изменить ник и аватар">
@@ -93,12 +94,14 @@
           <span id="o-format" class="opt-name">Формат</span>
           <div class="seg">
             <label><input type="radio" name="format" value="cash" checked><span>Кэш-стол</span></label>
+            <label><input type="radio" name="format" value="rush"><span>R&amp;C</span></label>
             <label><input type="radio" name="format" value="tournament"><span>Турнир</span></label>
           </div>
         </div>
         <div class="opt cash-only">
           <span class="opt-name">Стол</span>
           <p class="table-pick" id="table-pick" aria-live="polite"></p>
+          <p class="table-pick rush-only" id="rush-note"><b>Rush &amp; Cash:</b> сбросили карты — сразу новый стол с новыми соперниками и новая раздача, без ожидания. «Пас» можно нажать и не в свой ход. Иногда в банк падает бонус Cash Drop.</p>
         </div>
         <div class="opt tourney-only" role="radiogroup" aria-labelledby="o-tbuy">
           <span id="o-tbuy" class="opt-name">Взнос за турнир</span>

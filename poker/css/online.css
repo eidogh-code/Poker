@@ -27,11 +27,15 @@ body.online .online-only { display: inline-flex; }
 
 /* ---------- лобби ---------- */
 .lobby {
-  min-height: 100vh; height: 100vh; overflow: auto;
+  height: 100vh; height: 100dvh;
+  overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain;
   max-width: 1100px; margin: 0 auto;
-  padding: 14px 16px 20px;
+  padding: max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(20px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   display: flex; flex-direction: column; gap: 14px;
 }
+/* Высота лобби фиксирована, поэтому блоки не сжимаются, а уходят вниз под прокрутку. */
+.lobby > * { flex: none; }
 .lobby-head { display: flex; align-items: center; gap: 12px; }
 .lobby-head h2 { margin: 0; font-family: var(--font-display); font-size: 34px; font-weight: 700; }
 .net-status {
@@ -112,7 +116,11 @@ body.online .online-only { display: inline-flex; }
    иначе на телефоне 390px подписи «1 000 · 5/10» не помещаются. Специфичность выше, чем у .seg в portrait.css. */
 .seg.seg-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
 @media (orientation: portrait) {
-  .seg.seg-wrap { display: grid; grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
+  /* Ячейки не уже 104px: «1 000 000 · 5 000/10 000» переносится по «·» в две строки, а не вылезает. */
+  .seg.seg-wrap { display: grid; grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(min(100%, 104px), 1fr)); }
+  .seg.seg-wrap span { white-space: normal; text-wrap: balance; padding-inline: 6px; }
+  /* Взнос турнира — короткие числа: по три-четыре в ряд. */
+  #tq-buyins.seg-wrap { grid-template-columns: repeat(auto-fill, minmax(min(100%, 72px), 1fr)); }
   .create-opts .opt { grid-template-columns: minmax(0, 1fr); }
 }
 
@@ -144,7 +152,13 @@ body.online .online-only { display: inline-flex; }
 
 /* ---------- рейтинг ---------- */
 .rating-sheet { width: min(640px, calc(100vw - 32px)); }
-.rating-sheet .sheet-body { max-height: calc(100vh - 34px); max-height: calc(100dvh - 34px); grid-template-rows: auto auto auto auto minmax(0, 1fr) auto; }
+/* Окно рейтинга — колонка во всю свою высоту: прокручивается только таблица, шапка и кнопки на месте.
+   Высоту ограничивает само окно (в портрете — 92dvh). */
+.rating-sheet[open] { display: flex; flex-direction: column; }
+.rating-sheet .sheet-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+/* Колонкой, а не сеткой с номерами строк: пустая строка статуса скрыта (:empty) и не сдвигает кнопки в нулевую строку. */
+.rating-sheet .sheet-body > * { flex: none; }
+.rating-sheet .sheet-body > .rating-scroll { flex: 0 1 auto; }
 .rating-sheet .field-hint { margin: 0; }
 .rating-me {
   padding: 10px 12px; border-radius: 12px;
